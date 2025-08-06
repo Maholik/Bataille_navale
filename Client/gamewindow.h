@@ -22,7 +22,7 @@ public:
     ~GameWindow();
 
 private slots:
-    void onElementClicked(int row, int col);
+    void onElementClicked(int row, int col, bool isOpponentBoard = true);
     void onReadyRead();  // Ajoutez cette ligne
     void onQuitRoom();
     void onSendMessage();

@@ -55,17 +55,19 @@ void GameWindow::onReadyRead() {
                     QString caseElement = parts[i];
                     i++;
                     if (player1 == playerName) {
+                        // MON plateau - NON attaquable
                         Clickablewidget *cardLabel = new Clickablewidget (caseElement,this);//
                         connect(cardLabel, &Clickablewidget::clicked, this, [this, row, col]() {
-                            onElementClicked(row, col);
+                            onElementClicked(row, col,false);
                         });
                         ui->gridCurrentBoard->addWidget(cardLabel, row, col);
                         ui->opponentLabel->setText(player2);
                         line.push_back(cardLabel);//
                     } else {
+                        // PLATEAU ADVERSE - Attaquable
                         Clickablewidget *cardLabel1 = new Clickablewidget ("X",this);//
                         connect(cardLabel1, &Clickablewidget::clicked, this, [this, row, col]() {
-                            onElementClicked(row, col);
+                            onElementClicked(row, col,true);
                         });
                         ui->opponentLabel->setText(player1);
                         ui->gridOppositeBoard->addWidget(cardLabel1, row, col);
@@ -88,16 +90,18 @@ void GameWindow::onReadyRead() {
                     QString caseElement1 = parts[i];
                     i++;
                     if (player1 == playerName) {
+                        // PLATEAU ADVERSE - Attaquable
                         Clickablewidget *cardLabel2 = new Clickablewidget ("X",this);//
                         connect(cardLabel2, &Clickablewidget::clicked, this, [this, row1, col1]() {
-                            onElementClicked(row1, col1);
+                            onElementClicked(row1, col1,true);
                         });
                         ui->gridOppositeBoard->addWidget(cardLabel2, row1, col1);
                         line1.push_back(cardLabel2);//
                     } else {
+                        // MON plateau - NON attaquable
                         Clickablewidget *cardLabel3 = new Clickablewidget (caseElement1,this);//
                         connect(cardLabel3, &Clickablewidget::clicked, this, [this, row1, col1]() {
-                            onElementClicked(row1, col1);
+                            onElementClicked(row1, col1,false);
                         });
                         ui->gridCurrentBoard->addWidget(cardLabel3, row1, col1);
                         line1.push_back(cardLabel3);
@@ -228,9 +232,34 @@ void GameWindow::statusModification(const QString& currentPlayer, bool isGameOve
     }
 }
 
-void GameWindow::onElementClicked(int row, int col)
+void GameWindow::onElementClicked(int row, int col, bool isOpponentBoard)
 {
     qDebug("Clicked");
+
+    // Vérifier qu'on peut jouer
+    if (this->playerName != ui->currentPlayerLabel->text()) {
+        qDebug() << "Ce n'est pas votre tour !";
+        return;
+    }
+
+    // Empêcher l'attaque de son propre plateau
+    if (!isOpponentBoard) {
+        qDebug() << "Vous ne pouvez pas attaquer votre propre plateau !";
+        ui->messageIncomeBox->append("Vous ne pouvez pas attaquer votre propre plateau !");
+        return;
+    }
+
+    // Vérifier que la case n'a pas déjà été attaquée
+    if (row < this->opponentBoard.size() && col < this->opponentBoard[row].size()) {
+        Clickablewidget* targetWidget = this->opponentBoard[row][col];
+        if (targetWidget && (targetWidget->getCase() == "H" || targetWidget->getCase() == "M")) {
+            qDebug() << "Cette case a déjà été attaquée !";
+            ui->messageIncomeBox->append("Cette case a déjà été attaquée !");
+            return;
+        }
+    }
+
+    // Votre code existant (inchangé)
     if(this->isReconnaisancePowerActive){
         QString message = "RECONNAISANCE;" + this->roomId + ";" + QString::number(row) + ";" + QString::number(col) + "\n";
         socket->write(message.toUtf8());
