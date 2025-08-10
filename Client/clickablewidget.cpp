@@ -58,3 +58,10 @@ Clickablewidget::~Clickablewidget() {}
 void Clickablewidget::mousePressEvent(QMouseEvent* event) {
     emit clicked();
 }
+
+void Clickablewidget::setSunkHighlight() {
+    QPalette pal = this->palette();
+    pal.setColor(QPalette::Window, QColor("gold")); // Or
+    this->setAutoFillBackground(true);
+    this->setPalette(pal);
+}

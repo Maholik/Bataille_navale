@@ -203,6 +203,10 @@ void StartWindow::onReadyRead()
         }
         showGameViewWidget(roomId);
     }
+    else if (message.startsWith("ERR_NAME_TAKEN")) {
+        QMessageBox::warning(this, "Nom déjà pris", "Ce nom est déjà utilisé dans cette salle.");
+    }
+
     else {
         qDebug() << "Message non reconnu : " << message;
     }
@@ -271,5 +275,12 @@ void StartWindow::showWaitingPopup() {
 void StartWindow::on_btnExit_clicked()
 {
     QApplication::quit();
+}
+
+
+void StartWindow::on_iaButton_clicked()
+{
+    socket->write(QString("START_SOLO;%1\n").arg(playerName).toUtf8());
+
 }
 

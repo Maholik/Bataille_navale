@@ -23,7 +23,7 @@ public:
 
 private slots:
     void onElementClicked(int row, int col, bool isOpponentBoard = true);
-    void onReadyRead();  // Ajoutez cette ligne
+    void onReadyRead();  // Ajouter cette ligne
     void onQuitRoom();
     void onSendMessage();
     void onClearButton();

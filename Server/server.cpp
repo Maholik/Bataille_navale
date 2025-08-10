@@ -1,9 +1,13 @@
 #include "server.h"
 #include "game.h"
+#include "AiAgent.h"
+#include <QTimer>
+#include <algorithm>
 #include <QTcpSocket>
 #include <QDebug>
 #include <QJsonObject>
 #include <QJsonArray>
+
 
 Server::Server(QObject *parent) :
     QObject(parent),
@@ -49,6 +53,18 @@ void Server::createRoom(const QString& id_room, const QString& name, const QStri
     sendRoomInfoToClients();
 }
 
+bool Server::isNameTakenInRoom(const QString& roomId, const QString& playerName) const {
+    const Room* room = const_cast<Server*>(this)->findRoomById(roomId);
+    if (!room) return false;
+    for (QTcpSocket* c : room->clients) {
+        const int otherId = clientIdMap.value(c, -1);
+        if (otherId != -1 && clientToNameMap.value(otherId) == playerName)
+            return true;
+    }
+    return false;
+}
+
+
 void Server::sendRoomInfoToClients()
 {
     for (QTcpSocket *client : qAsConst(clients)) {
@@ -65,6 +81,19 @@ void Server::sendRoomInfoToClients()
         qDebug() << "Liste des rooms envoyée : " << roomInfo;
     }
 }
+
+static Boat* findBoatAt(Board* board, int row, int col) {
+    if (!board) return nullptr;
+    Case* target = board->getCase(row, col);
+    for (Boat* b : board->getAllBoats()) {
+        const auto& structure = b->getStructure();
+        if (std::find(structure.begin(), structure.end(), target) != structure.end()) {
+            return b;
+        }
+    }
+    return nullptr;
+}
+
 
 void Server::sendBoardsUpdateToClients(QString& _roomId){
     Room* roomId = findRoomById(_roomId);
@@ -150,6 +179,27 @@ void Server::sendUpdateCaseToClients(QString& _roomId, int row, int col){
         client->write(roomInfo.toUtf8());
         qDebug() << "Update envoyée : " << roomInfo;
     }
+    // --- Détection "coulé" ---
+    Board* oppBoard = gamemodel->getOppositePlayer()->getBoard();
+    Boat* hitBoat = findBoatAt(oppBoard, row, col);
+
+    if (hitBoat && hitBoat->isSunk()) {
+        // Construire le message: BOAT_SUNK;ownerName;N;row1;col1;...;rowN;colN
+        QString sunkMsg = "BOAT_SUNK;";
+        sunkMsg += QString::fromStdString(gamemodel->getOppositePlayer()->getName()) + ";";
+
+        const auto& cells = hitBoat->getStructure();
+        sunkMsg += QString::number(static_cast<int>(cells.size())) + ";";
+        for (Case* cell : cells) {
+            sunkMsg += QString::number(cell->getRow()) + ";" + QString::number(cell->getCol()) + ";";
+        }
+        sunkMsg += "\n";
+
+        for (QTcpSocket *client : roomId->clients) {
+            client->write(sunkMsg.toUtf8());
+        }
+    }
+
     gamemodel->changePlayer();
 }
 
@@ -222,6 +272,14 @@ void Server::onReadyRead()
         QString roomId = parts[2];
         QString password = (parts.size() == 4) ? parts[3] : "";
 
+        // Refus si nom déjà pris dans la room
+        if (isNameTakenInRoom(roomId, playerName)) {
+            clientSocket->write("ERR_NAME_TAKEN\n");
+            clientSocket->flush();
+            return;
+        }
+
+
         if (checkRoomAccess(roomId, password)) {
             clientRoomMap[clientSocket] = roomId;  // Mettez à jour le mapping des rooms
             Room* room = findRoomById(roomId);
@@ -291,6 +349,17 @@ void Server::onReadyRead()
         QString message = "RECONNAISANCE_RESULT;" + QString::number(nbBateauInZone) + "\n";
         clientSocket->write(message.toUtf8());
     }
+    else if (message.startsWith("START_SOLO;")) {
+        // Format: START_SOLO;playerName
+        QStringList parts = message.split(';', Qt::SkipEmptyParts);
+        if (parts.size() >= 2) {
+            QString playerName = parts[1];
+            createSoloGame(clientSocket, playerName);
+        } else {
+            clientSocket->write("ERR_BAD_SOLO_FORMAT\n");
+        }
+    }
+
 }
 
 Server::Room* Server::findRoomById(const QString& id_room)
@@ -403,4 +472,100 @@ QList<QTcpSocket*> Server::clientsInRoom(const QString &_roomId) {
     }
     return roomClients;
 }
+
+void Server::createSoloGame(QTcpSocket* humanSocket, const QString& playerName)
+{
+    // créer une "room" dédiée
+    QString roomId = QString("solo_%1").arg(clientIdMap[humanSocket]);
+    createRoom(roomId, "Solo vs AI", "publique", "");
+    Room* room = findRoomById(roomId);
+    room->clients.append(humanSocket);
+    clientRoomMap[humanSocket] = roomId;
+    room->clientCount = 1;
+
+    // Créer joueurs
+    Player* human = new Player{ playerName.toStdString() };
+    Player* ai    = new Player{ std::string("AI") };
+
+    // Game
+    Game* game = new Game(human, ai);
+    games.append(game);
+    roomGameMap[roomId] = game;
+    game->initializeGame();
+
+    // IA (dimension 10x10 aujourd'hui)
+    roomAiMap[roomId] = new AiAgent(human->getBoard()->getRows(), human->getBoard()->getCols());
+
+    // prévenir le client que la room est prête
+    humanSocket->write(QString("ROOM_READY;%1\n").arg(roomId).toUtf8());
+    humanSocket->flush();
+
+    // envoyer les boards + status
+    sendBoardsUpdateToClients(roomId);
+    sendStatusInfoToClients(roomId);
+
+    // si c'est à l'IA de jouer en premier, jouer tout de suite
+    if (QString::fromStdString(game->getCurrentPlayer()->getName()) == "AI") {
+        QTimer::singleShot(300, [this, roomId]() { playAiTurn(roomId); });
+    }
+}
+
+void Server::playAiTurn(const QString& roomId)
+{
+    Game* game = roomGameMap.value(roomId, nullptr);
+    Room* room = findRoomById(roomId);
+    AiAgent* ai = roomAiMap.value(roomId, nullptr);
+    if (!game || !room || !ai) return;
+
+    // sécurité: ne jouer que si c'est bien le tour de l'IA
+    if (QString::fromStdString(game->getCurrentPlayer()->getName()) != "AI") return;
+
+    // Choisir un tir
+    auto move = ai->nextMove();
+    int r = move.first, c = move.second;
+    if (r < 0 || c < 0) return;
+
+    // On tire sur le plateau de l'humain (oppositePlayer du joueur courant)
+    Board* humanBoard = game->getOppositePlayer()->getBoard();
+    // Évaluer le statut avant/après
+    bool wasHit = humanBoard->getCase(r,c)->getStatus() == Case::Occupied;
+    game->attackPlayer(r,c); // applique Hit/Miss
+
+    // Envoyer mise à jour case
+    QString rid = roomId;
+    sendUpdateCaseToClients(rid, r, c);
+
+    // Détection coulé (on réutilise ta logique "BOAT_SUNK" si présente,
+    // sinon on informe l'IA via isSunk)
+    bool sunk = false;
+    // On teste si la case touchée appartient à un bateau désormais coulé
+    // (reprise du helper suggéré précédemment)
+    auto findBoatAt = [](Board* board, int row, int col)->Boat* {
+        Case* target = board->getCase(row,col);
+        for (Boat* b : board->getAllBoats()) {
+            const auto& s = b->getStructure();
+            if (std::find(s.begin(), s.end(), target) != s.end())
+                return b;
+        }
+        return nullptr;
+    };
+    Boat* b = findBoatAt(humanBoard, r, c);
+    if (b && b->isSunk()) sunk = true;
+
+    ai->onResult(r, c, wasHit ? 'H' : 'M', sunk);
+
+    // Envoyer status et, si maintenant c'est encore à l'IA (selon ta règle de tour),
+    // tu peux rejouer au prochain tick. Dans ton code actuel, le tour change à chaque tir,
+    // donc ça repassera au joueur humain.
+    sendStatusInfoToClients(rid);
+
+    // Si le jeu est fini, on ne relance rien
+    if (game->isGameOver()) return;
+
+    // Si ta règle de tour change (ex: rejouer en cas de Hit), tu peux faire :
+    // if (QString::fromStdString(game->getCurrentPlayer()->getName()) == "AI")
+    //     QTimer::singleShot(300, [this, roomId]() { playAiTurn(roomId); });
+}
+
+
 

@@ -23,6 +23,8 @@ private slots:
     void onReadyRead();
     void on_btnExit_clicked();
 
+    void on_iaButton_clicked();
+
 private:
     Ui::StartWindow *ui;
     QTcpSocket *socket;

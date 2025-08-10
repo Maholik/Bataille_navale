@@ -18,6 +18,8 @@ public:
     void setCase(const QString& _element);
     QString getCase();
     ~Clickablewidget();
+    void setSunkHighlight(); // <- AJOUT
+
 
 signals:
     void clicked();

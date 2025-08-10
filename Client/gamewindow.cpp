@@ -150,6 +150,43 @@ void GameWindow::onReadyRead() {
             QString formattedMessage = "Resultat Reconnaisance : " + QString::number(nbBateaux) + " Bateaux sont presents dans la zone";
             ui->messageIncomeBox->append(formattedMessage);
         }
+else if (msg.startsWith("BOAT_SUNK;")) {
+    // Format: BOAT_SUNK;ownerName;N;row1;col1;row2;col2; ... ;rowN;colN
+    QStringList parts = msg.split(';', Qt::SkipEmptyParts);
+    if (parts.size() < 3) {
+        qWarning() << "BOAT_SUNK invalide:" << msg;
+        continue;
+    }
+
+    const QString ownerName = parts[1];
+    const int n = parts[2].toInt();
+    int idx = 3;
+
+    for (int k = 0; k < n; ++k) {
+        if (idx + 1 >= parts.size()) {
+            qWarning() << "BOAT_SUNK tronqué:" << msg;
+            break;
+        }
+        const int r = parts[idx++].toInt();
+        const int c = parts[idx++].toInt();
+
+        // Si le bateau appartient à l'adversaire, on colore sur opponentBoard,
+        // sinon sur mon board.
+        if (ownerName != this->playerName) {
+            if (r < opponentBoard.size() && c < opponentBoard[r].size() && opponentBoard[r][c]) {
+                opponentBoard[r][c]->setSunkHighlight();
+            }
+        } else {
+            if (r < myBoard.size() && c < myBoard[r].size() && myBoard[r][c]) {
+                myBoard[r][c]->setSunkHighlight();
+            }
+        }
+    }
+
+    // Optionnel: message d’info chat
+    ui->messageIncomeBox->append(QString("🚢 Bateau coulé (%1) !").arg(ownerName != this->playerName ? "adverse" : "chez vous"));
+}
+
     }
 }
 

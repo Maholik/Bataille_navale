@@ -25,6 +25,8 @@ add_executable(Server
     Player.cpp
     Game.h
     Game.cpp
+    AiAgent.h
+    AiAgent.cpp
     server.h
     server.cpp)
 

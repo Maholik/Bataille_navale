@@ -56,6 +56,12 @@ private:
     Room* findRoomById(const QString& id_room);
     bool checkRoomAccess(const QString& id_room, const QString& password);
     void handleClientRequest(QTcpSocket* client, const QString& request);
+    bool isNameTakenInRoom(const QString& roomId, const QString& playerName) const;
+    QMap<QString, class AiAgent*> roomAiMap; // IA par room (si solo)
+    void playAiTurn(const QString& roomId);  // lance un coup IA
+    void createSoloGame(QTcpSocket* humanSocket, const QString& playerName);
+
+
 };
 
 #endif // SERVER_H
