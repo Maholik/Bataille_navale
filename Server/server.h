@@ -86,6 +86,11 @@ private:
     bool canUseMissile(const QString& roomId, const QString& attacker) const;
     void consumeMissileOrPay(const QString& roomId, const QString& attacker);
 
+    // achat/usage scanner (reconnaissance)
+    bool canUseScanner(const QString& roomId, const QString& attacker) const;
+    void consumeScannerOrPay(const QString& roomId, const QString& attacker);
+
+
 
 
 };

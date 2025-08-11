@@ -409,14 +409,28 @@ void Server::onReadyRead()
                 Case* before = targetBoard->getCase(r, c);
                 Boat* boatBefore = nullptr;
                 if (before->getStatus() == Case::Occupied || before->getStatus() == Case::Hit) {
-                    for (Boat* b : targetBoard->getAllBoats()) {
-                        const auto& s = b->getStructure();
-                        if (std::find(s.begin(), s.end(), before) != s.end()) {
-                            // ✅ n’ajoute pas les bateaux déjà coulés, pour éviter de re-spammer BOAT_SUNK
-                            if (!b->isSunk()) boatBefore = b;
-                            break;
-                        }
+                    for (Boat* b : std::as_const(touchedBoats)) {
+                        if (b->isSunk()) sunkThisMissile++;
                     }
+
+                    // Scoring missile : +10 par Hit, +30 par bateau coulé (ajuste si besoin)
+                    for (int i = 0; i < hitsThisMissile; ++i)
+                        addScoreForHitAndSunk(roomId, attacker, /*hit=*/true,  /*sunk=*/false);
+                    for (int i = 0; i < sunkThisMissile; ++i)
+                        addScoreForHitAndSunk(roomId, attacker, /*hit=*/false, /*sunk=*/true);
+
+                    // Drop auto (tous les 4 tours) + fin de tour
+                    tryDropPowerEvery4Turns(roomId, attacker);
+                    gamemodel->changePlayer();
+
+                    // Statut & IA éventuelle
+                    sendStatusInfoToClients(roomId);
+                    if (roomAiMap.contains(roomId)
+                        && QString::fromStdString(gamemodel->getCurrentPlayer()->getName()) == "AI"
+                        && !gamemodel->isGameOver()) {
+                        QTimer::singleShot(300, [this, roomId]() { playAiTurn(roomId); });
+                    }
+
                     if (boatBefore) touchedBoats.insert(boatBefore);
                 }
 
@@ -446,16 +460,48 @@ void Server::onReadyRead()
         QString chatMessage = parts[2];  // Contenu du message
         broadcastMessageToRoom(roomId,chatMessage);
     }
-    else if(message.startsWith("RECONNAISANCE;")) {
-        QStringList parts = message.split(";");
-        QString roomId = parts[1];       // Nom du joueur qui a envoyé le message
-        int row = parts[2].toInt();  // Contenu du message
+    else if (message.startsWith("RECONNAISANCE;")) {
+        QStringList parts = message.split(";", Qt::SkipEmptyParts);
+        if (parts.size() < 4) { clientSocket->write("POWER_ERR;BAD_RECON_FORMAT\n"); return; }
+
+        QString roomId = parts[1];
+        int row = parts[2].toInt();
         int col = parts[3].toInt();
-        Game* gamemodel = roomGameMap[roomId];
-        int nbBateauInZone = gamemodel->reconnaissanceZone(row,col);
-        QString message = "RECONNAISANCE_RESULT;" + QString::number(nbBateauInZone) + "\n";
-        clientSocket->write(message.toUtf8());
+
+        Game* gamemodel = roomGameMap.value(roomId, nullptr);
+        if (!gamemodel) return;
+
+        // Joueur qui demande la reco = joueur courant
+        QString attacker = QString::fromStdString(gamemodel->getCurrentPlayer()->getName());
+
+        // Vérif inventaire/score
+        if (!canUseScanner(roomId, attacker)) {
+            clientSocket->write("POWER_ERR;SCANNER_NOT_AVAILABLE_OR_NOT_ENOUGH_SCORE\n");
+            return;
+        }
+        // Déduction (inventaire ou score)
+        consumeScannerOrPay(roomId, attacker);
+
+        // Calcul du résultat
+        int nbBateauInZone = gamemodel->reconnaissanceZone(row, col);
+
+        // Retourner le résultat au SEUL demandeur
+        QString reply = "RECONNAISANCE_RESULT;" + QString::number(nbBateauInZone) + "\n";
+        clientSocket->write(reply.toUtf8());
+
+        // Drop auto (tous les 4 tours) + fin de tour
+        tryDropPowerEvery4Turns(roomId, attacker);
+        gamemodel->changePlayer();
+
+        // Statut & IA éventuelle
+        sendStatusInfoToClients(roomId);
+        if (roomAiMap.contains(roomId)
+            && QString::fromStdString(gamemodel->getCurrentPlayer()->getName()) == "AI"
+            && !gamemodel->isGameOver()) {
+            QTimer::singleShot(300, [this, roomId]() { playAiTurn(roomId); });
+        }
     }
+
     else if (message.startsWith("START_SOLO;")) {
         QStringList parts = message.split(';');
         if (parts.size() >= 2) {
@@ -775,8 +821,25 @@ void Server::consumeMissileOrPay(const QString& roomId, const QString& attacker)
         ps.score -= MISSILE_COST; // paye en score
     }
     broadcastScoreAndInv(roomId, attacker);
+
 }
 
+// Achat / usage missile
+// Achat / usage scanner (reconnaissance)
+static constexpr int SCANNER_COST = 30;
+
+
+
+bool Server::canUseScanner(const QString& roomId, const QString& attacker) const {
+    const auto &ps = const_cast<Server*>(this)->roomState[roomId][attacker];
+    return ps.scanners > 0 || ps.score >= SCANNER_COST;
+}
+void Server::consumeScannerOrPay(const QString& roomId, const QString& attacker) {
+    auto &ps = roomState[roomId][attacker];
+    if (ps.scanners > 0) ps.scanners--;
+    else                 ps.score -= SCANNER_COST;
+    broadcastScoreAndInv(roomId, attacker);
+}
 
 
 

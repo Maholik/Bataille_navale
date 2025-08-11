@@ -299,34 +299,42 @@ void GameWindow::onElementClicked(int row, int col, bool isOpponentBoard)
         return;
     }
 
-    // Vérifier que la case n'a pas déjà été attaquée
-    if (row < this->opponentBoard.size() && col < this->opponentBoard[row].size()) {
-        Clickablewidget* targetWidget = this->opponentBoard[row][col];
-        if (targetWidget && (targetWidget->getCase() == "H" || targetWidget->getCase() == "M")) {
-            qDebug() << "Cette case a déjà été attaquée !";
-            ui->messageIncomeBox->append("Cette case a déjà été attaquée !");
-            return;
+    // --- IMPORTANT : si un pouvoir est actif (reco ou missile), on AUTORISE le clic
+    // même sur une case déjà attaquée (H/M ou dorée).
+    const bool skipAlreadyAttackedCheck = (this->isReconnaisancePowerActive || this->isMissilePowerActive);
+
+    if (!skipAlreadyAttackedCheck) {
+        // Vérifier que la case n'a pas déjà été attaquée (H ou M)
+        if (row < this->opponentBoard.size() && col < this->opponentBoard[row].size()) {
+            Clickablewidget* targetWidget = this->opponentBoard[row][col];
+            if (targetWidget && (targetWidget->getCase() == "H" || targetWidget->getCase() == "M")) {
+                qDebug() << "Cette case a déjà été attaquée !";
+                ui->messageIncomeBox->append("Cette case a déjà été attaquée !");
+                return;
+            }
         }
     }
 
-    // Votre code existant (inchangé)
-    if(this->isReconnaisancePowerActive){
+    // --- Pouvoirs ---
+    if (this->isReconnaisancePowerActive) {
         QString message = "RECONNAISANCE;" + this->roomId + ";" + QString::number(row) + ";" + QString::number(col) + "\n";
         socket->write(message.toUtf8());
-        this->isReconnaisancePowerActive = false;
-    }
-    if (this->isMissilePowerActive) {
-        QString message = "MISSILE;" + this->roomId + ";" + QString::number(row) + ";" + QString::number(col) + "\n";
-        socket->write(message.toUtf8());
-        this->isMissilePowerActive = false;
+        this->isReconnaisancePowerActive = false;  // désarmé côté client (le serveur gère coût/fin de tour)
         return;
     }
 
-    else{
-        QString message = "ATTACK;" + this->roomId + ";" + QString::number(row) + ";" + QString::number(col) ;
+    if (this->isMissilePowerActive) {
+        QString message = "MISSILE;" + this->roomId + ";" + QString::number(row) + ";" + QString::number(col) + "\n";
         socket->write(message.toUtf8());
+        this->isMissilePowerActive = false;        // désarmé côté client (le serveur gère coût/fin de tour)
+        return;
     }
+
+    // --- Tir simple si aucun pouvoir actif ---
+    QString message = "ATTACK;" + this->roomId + ";" + QString::number(row) + ";" + QString::number(col);
+    socket->write(message.toUtf8());
 }
+
 
 void GameWindow::onSendMessage(){
     QString message = ui->boxText->toPlainText().trimmed();  // Récupérer le texte saisi
