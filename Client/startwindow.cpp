@@ -9,6 +9,7 @@
 #include <QMessageBox>
 #include <QDebug>
 #include <QLabel>
+#include <QInputDialog>
 
 
 StartWindow::StartWindow(QWidget *parent) :
@@ -184,33 +185,36 @@ void StartWindow::on_btnJoin_clicked()
 void StartWindow::onReadyRead()
 {
     QByteArray response = socket->readAll();
-    QString message = QString::fromUtf8(response);
-    qDebug() << "Message reçu : " << message;
+    QString all = QString::fromUtf8(response);
+    qDebug() << "Message(s) reçu(s) :" << all;
 
-    // Identifier le type de réponse
-    if (message.startsWith("ROOM_LIST:")) {
-        updateRoomList(message);
-    }
-    else if (message.startsWith("ROOM_JOINED")){
-        showWaitingPopup();
-    }
-    else if(message.startsWith("ROOM_READY;")){
-        QString roomId = message.split(";")[1];
-        if (waitingMessageBox) {
-            waitingMessageBox->close();
-            //delete waitingMessageBox;
-            //waitingMessageBox = nullptr;
+        const QStringList lines = all.split('\n', Qt::SkipEmptyParts);
+    for (QString message : lines) {
+        message = message.trimmed();
+
+        if (message.startsWith("ROOM_LIST:")) {
+            updateRoomList(message);
         }
-        showGameViewWidget(roomId);
-    }
-    else if (message.startsWith("ERR_NAME_TAKEN")) {
-        QMessageBox::warning(this, "Nom déjà pris", "Ce nom est déjà utilisé dans cette salle.");
-    }
-
-    else {
-        qDebug() << "Message non reconnu : " << message;
+        else if (message.startsWith("ROOM_JOINED")) {
+            showWaitingPopup();
+        }
+        else if (message.startsWith("ROOM_READY;")) {
+            QString roomId = message.split(';', Qt::SkipEmptyParts).value(1);
+            if (waitingMessageBox) waitingMessageBox->close();
+            showGameViewWidget(roomId);
+        }
+        else if (message.startsWith("ERR_NAME_TAKEN")) {
+            QMessageBox::warning(this, "Nom déjà pris", "Ce nom est déjà utilisé dans cette salle.");
+        }
+        else if (message.startsWith("ERR_INVALID_PASSWORD_OR_ROOM_NOT_FOUND")) {
+            QMessageBox::warning(this, "Erreur", "Salle introuvable ou mot de passe invalide.");
+        }
+        else {
+            qDebug() << "Message non reconnu :" << message;
+        }
     }
 }
+
 
 void StartWindow::updateRoomList(const QString &roomInfo)
 {
@@ -278,9 +282,12 @@ void StartWindow::on_btnExit_clicked()
 }
 
 
+
 void StartWindow::on_iaButton_clicked()
 {
+    if (playerName.trimmed().isEmpty()) playerName = "Joueur";
     socket->write(QString("START_SOLO;%1\n").arg(playerName).toUtf8());
-
+    socket->flush();
 }
+
 

@@ -29,6 +29,8 @@ private slots:
     void onClearButton();
     void on_powerReconnaisance_clicked();
 
+    void on_powerMissile_clicked();
+
 signals:
     void gameAborted();
 
@@ -42,6 +44,8 @@ private:
     bool isReconnaisancePowerActive;
     std::vector<std::vector<Clickablewidget*>> myBoard; ///< Plateau de jeu graphique.
     std::vector<std::vector<Clickablewidget*>> opponentBoard;
+    bool isMissilePowerActive = false;
+
 };
 
 #endif // GAMEWINDOW_H

@@ -27,6 +27,7 @@ public:
     QList<QTcpSocket*> clientsInRoom(const QString &roomId);
     void onRoomDisconnected(const QString&);
 
+
 private slots:
     void onNewConnection();
     void onReadyRead();
@@ -40,6 +41,14 @@ private:
         QString password;
         int clientCount;
         QList<QTcpSocket*> clients;
+    };
+
+    // --- ÉTAT PAR JOUEUR (score, drops, inventaire) ---
+    struct PlayerState {
+        int score = 0;
+        int turnsSinceDrop = 0;  // +1 à chaque tour joué ; drop à 4
+        int scanners = 0;
+        int missiles = 0;
     };
 
     QTcpServer *server;
@@ -60,6 +69,23 @@ private:
     QMap<QString, class AiAgent*> roomAiMap; // IA par room (si solo)
     void playAiTurn(const QString& roomId);  // lance un coup IA
     void createSoloGame(QTcpSocket* humanSocket, const QString& playerName);
+    // roomId -> (playerName -> PlayerState)
+    QMap<QString, QMap<QString, PlayerState>> roomState;
+
+    // --- HELPERS (déclarations) ---
+    void sendUpdateCaseNoTurnSwap(QString& _roomId, int row, int col);
+    void broadcastScoreAndInv(const QString& roomId, const QString& player);
+
+    // scoring d’un tir unitaire (hit/sunk)
+    void addScoreForHitAndSunk(const QString& roomId, const QString& attacker, bool hit, bool sunk);
+
+    // drop aléatoire (appelé fin de tour)
+    void tryDropPowerEvery4Turns(const QString& roomId, const QString& attacker);
+
+    // achat/usage missile
+    bool canUseMissile(const QString& roomId, const QString& attacker) const;
+    void consumeMissileOrPay(const QString& roomId, const QString& attacker);
+
 
 
 };

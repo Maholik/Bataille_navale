@@ -1,6 +1,8 @@
 #include "gamewindow.h"
 #include "ui_gamewindow.h"
 #include "QMessageBox"
+#include <QRegularExpression> // add this at the top
+
 
 GameWindow::GameWindow(const QString &_roomId, QTcpSocket *_socket, const QString& _playerName,QWidget *parent) :
     QMainWindow(parent),
@@ -40,79 +42,65 @@ void GameWindow::onReadyRead() {
     QStringList messages = message.split('\n', Qt::SkipEmptyParts);
 
     for (const QString &msg : messages) {
-        if(msg.startsWith("BOARD_CREATE;")){
-            QStringList parts = msg.split(";");
-            int width = parts[1].toInt();
-            int height = parts[2].toInt();
-            QString player1 = parts[3];
-            QString player2 = parts[104];
+        if (msg.startsWith("BOARD_CREATE;")) {
+            // Split on ';' or '\n'
+            QStringList t = msg.split(QRegularExpression("[;\n]"), Qt::SkipEmptyParts);
 
-            int i = 4;
+            // Expected layout:
+            // [0]="BOARD_CREATE", [1]=W, [2]=H, [3]=player1,
+            // [4.. 4+W*H-1]=board1, [4+W*H]=player2, then [..]=board2 (W*H cells)
+            if (t.size() < 4) { qWarning() << "BOARD_CREATE truncated"; continue; }
 
-            for (int row = 0; row < width; ++row) {
-                std::vector<Clickablewidget*> line;
-                for (int col = 0; col < height; ++col) {
-                    QString caseElement = parts[i];
-                    i++;
-                    if (player1 == playerName) {
-                        // MON plateau - NON attaquable
-                        Clickablewidget *cardLabel = new Clickablewidget (caseElement,this);//
-                        connect(cardLabel, &Clickablewidget::clicked, this, [this, row, col]() {
-                            onElementClicked(row, col,false);
-                        });
-                        ui->gridCurrentBoard->addWidget(cardLabel, row, col);
-                        ui->opponentLabel->setText(player2);
-                        line.push_back(cardLabel);//
-                    } else {
-                        // PLATEAU ADVERSE - Attaquable
-                        Clickablewidget *cardLabel1 = new Clickablewidget ("X",this);//
-                        connect(cardLabel1, &Clickablewidget::clicked, this, [this, row, col]() {
-                            onElementClicked(row, col,true);
-                        });
-                        ui->opponentLabel->setText(player1);
-                        ui->gridOppositeBoard->addWidget(cardLabel1, row, col);
-                        line.push_back(cardLabel1);//
-                    }
-                }
-                // Ajout de la ligne complète à opponentBoard ou myBoard
-                if (player1 == playerName) {
-                    this->myBoard.push_back(line);
-                } else {
-                    this->opponentBoard.push_back(line);
-                }
+            const int W = t[1].toInt();
+            const int H = t[2].toInt();
+            const QString p1 = t[3].trimmed();
+
+            const int cells = W * H;
+            const int idxBoard1Start = 4;
+            const int idxBoard1End   = idxBoard1Start + cells - 1;
+            const int idxPlayer2     = idxBoard1End + 1;
+            const int idxBoard2Start = idxPlayer2 + 1;
+            const int idxBoard2End   = idxBoard2Start + cells - 1;
+
+            if (t.size() <= idxBoard2End) {
+                qWarning() << "BOARD_CREATE wrong count, got" << t.size() << "need" << (idxBoard2End+1);
+                continue;
             }
 
-            i++;
+            const QString p2 = t[idxPlayer2].trimmed();
 
-            for (int row1 = 0; row1 < width; ++row1) {
-                std::vector<Clickablewidget*> line1;
-                for (int col1 = 0; col1 < height; ++col1) {
-                    QString caseElement1 = parts[i];
-                    i++;
-                    if (player1 == playerName) {
-                        // PLATEAU ADVERSE - Attaquable
-                        Clickablewidget *cardLabel2 = new Clickablewidget ("X",this);//
-                        connect(cardLabel2, &Clickablewidget::clicked, this, [this, row1, col1]() {
-                            onElementClicked(row1, col1,true);
-                        });
-                        ui->gridOppositeBoard->addWidget(cardLabel2, row1, col1);
-                        line1.push_back(cardLabel2);//
-                    } else {
-                        // MON plateau - NON attaquable
-                        Clickablewidget *cardLabel3 = new Clickablewidget (caseElement1,this);//
-                        connect(cardLabel3, &Clickablewidget::clicked, this, [this, row1, col1]() {
-                            onElementClicked(row1, col1,false);
-                        });
-                        ui->gridCurrentBoard->addWidget(cardLabel3, row1, col1);
-                        line1.push_back(cardLabel3);
+            // Build grids
+            auto buildGrid = [&](int startIdx, bool mine) {
+                int k = startIdx;
+                for (int r = 0; r < W; ++r) {
+                    std::vector<Clickablewidget*> line;
+                    for (int c = 0; c < H; ++c, ++k) {
+                        const QString cell = t[k];
+                        Clickablewidget* w = nullptr;
+                        if (mine) {
+                            w = new Clickablewidget(cell, this);
+                            connect(w, &Clickablewidget::clicked, this, [this,r,c](){ onElementClicked(r,c,false); });
+                            ui->gridCurrentBoard->addWidget(w, r, c);
+                        } else {
+                            w = new Clickablewidget("X", this);
+                            connect(w, &Clickablewidget::clicked, this, [this,r,c](){ onElementClicked(r,c,true); });
+                            ui->gridOppositeBoard->addWidget(w, r, c);
+                        }
+                        line.push_back(w);
                     }
+                    if (mine) myBoard.push_back(line); else opponentBoard.push_back(line);
                 }
-                // Ajout de la ligne complète à opponentBoard ou myBoard
-                if (player1 == playerName) {
-                    this->opponentBoard.push_back(line1);
-                } else {
-                    this->myBoard.push_back(line1);
-                }
+            };
+
+            // Decide who is me
+            if (p1 == playerName) {
+                ui->opponentLabel->setText(p2);
+                buildGrid(idxBoard1Start, /*mine=*/true);
+                buildGrid(idxBoard2Start, /*mine=*/false);
+            } else {
+                ui->opponentLabel->setText(p1);
+                buildGrid(idxBoard1Start, /*mine=*/false);
+                buildGrid(idxBoard2Start, /*mine=*/true);
             }
         }
         else if(msg.startsWith("STATUS;")){
@@ -150,43 +138,68 @@ void GameWindow::onReadyRead() {
             QString formattedMessage = "Resultat Reconnaisance : " + QString::number(nbBateaux) + " Bateaux sont presents dans la zone";
             ui->messageIncomeBox->append(formattedMessage);
         }
-else if (msg.startsWith("BOAT_SUNK;")) {
-    // Format: BOAT_SUNK;ownerName;N;row1;col1;row2;col2; ... ;rowN;colN
-    QStringList parts = msg.split(';', Qt::SkipEmptyParts);
-    if (parts.size() < 3) {
-        qWarning() << "BOAT_SUNK invalide:" << msg;
-        continue;
-    }
 
-    const QString ownerName = parts[1];
-    const int n = parts[2].toInt();
-    int idx = 3;
-
-    for (int k = 0; k < n; ++k) {
-        if (idx + 1 >= parts.size()) {
-            qWarning() << "BOAT_SUNK tronqué:" << msg;
-            break;
-        }
-        const int r = parts[idx++].toInt();
-        const int c = parts[idx++].toInt();
-
-        // Si le bateau appartient à l'adversaire, on colore sur opponentBoard,
-        // sinon sur mon board.
-        if (ownerName != this->playerName) {
-            if (r < opponentBoard.size() && c < opponentBoard[r].size() && opponentBoard[r][c]) {
-                opponentBoard[r][c]->setSunkHighlight();
-            }
-        } else {
-            if (r < myBoard.size() && c < myBoard[r].size() && myBoard[r][c]) {
-                myBoard[r][c]->setSunkHighlight();
+        else if (msg.startsWith("POWER_AVAILABLE;")) {
+            auto parts = msg.split(';', Qt::SkipEmptyParts);
+            if (parts.size() >= 3) {
+                QString who = parts[1];
+                QString what = parts[2];
+                if (who == this->playerName) {
+                    ui->messageIncomeBox->append("Nouveau pouvoir: " + what);
+                }
             }
         }
-    }
+        else if (msg.startsWith("SCORE_UPDATE;")) {
+            auto parts = msg.split(';', Qt::SkipEmptyParts);
+            if (parts.size() >= 5) {
+                QString who = parts[1];
+                int score = parts[2].toInt();
+                int scanners = parts[3].toInt();
+                int missiles = parts[4].toInt();
+                if (who == this->playerName) {
+                    ui->messageIncomeBox->append(
+                        QString("Score: %1 | Scanners: %2 | Missiles: %3").arg(score).arg(scanners).arg(missiles));
+                }
+            }
+        }
 
-    // Optionnel: message d’info chat
-    ui->messageIncomeBox->append(QString("🚢 Bateau coulé (%1) !").arg(ownerName != this->playerName ? "adverse" : "chez vous"));
-}
 
+        else if (msg.startsWith("BOAT_SUNK;")) {
+            // Format: BOAT_SUNK;ownerName;N;row1;col1;row2;col2; ... ;rowN;colN
+            QStringList parts = msg.split(';', Qt::SkipEmptyParts);
+            if (parts.size() < 3) {
+                qWarning() << "BOAT_SUNK invalide:" << msg;
+                continue;
+            }
+
+            const QString ownerName = parts[1];
+            const int n = parts[2].toInt();
+            int idx = 3;
+
+            for (int k = 0; k < n; ++k) {
+                if (idx + 1 >= parts.size()) {
+                    qWarning() << "BOAT_SUNK tronqué:" << msg;
+                    break;
+                }
+                const int r = parts[idx++].toInt();
+                const int c = parts[idx++].toInt();
+
+                // Si le bateau appartient à l'adversaire, on colore sur opponentBoard,
+                // sinon sur mon board.
+                if (ownerName != this->playerName) {
+                    if (r < opponentBoard.size() && c < opponentBoard[r].size() && opponentBoard[r][c]) {
+                        opponentBoard[r][c]->setSunkHighlight();
+                    }
+                } else {
+                    if (r < myBoard.size() && c < myBoard[r].size() && myBoard[r][c]) {
+                        myBoard[r][c]->setSunkHighlight();
+                    }
+                }
+            }
+
+            // Optionnel: message d’info chat
+            ui->messageIncomeBox->append(QString("🚢 Bateau coulé (%1) !").arg(ownerName != this->playerName ? "adverse" : "chez vous"));
+        }
     }
 }
 
@@ -302,6 +315,13 @@ void GameWindow::onElementClicked(int row, int col, bool isOpponentBoard)
         socket->write(message.toUtf8());
         this->isReconnaisancePowerActive = false;
     }
+    if (this->isMissilePowerActive) {
+        QString message = "MISSILE;" + this->roomId + ";" + QString::number(row) + ";" + QString::number(col) + "\n";
+        socket->write(message.toUtf8());
+        this->isMissilePowerActive = false;
+        return;
+    }
+
     else{
         QString message = "ATTACK;" + this->roomId + ";" + QString::number(row) + ";" + QString::number(col) ;
         socket->write(message.toUtf8());
@@ -341,4 +361,12 @@ void GameWindow::on_powerReconnaisance_clicked()
 {
     this->isReconnaisancePowerActive = true;
 }
+
+void GameWindow::on_powerMissile_clicked()
+{
+    // Active le mode "prochain clic = MISSILE"
+    this->isMissilePowerActive = true;
+    ui->messageIncomeBox->append("Missile sélectionné : cliquez une case cible (centre du 3x3).");
+}
+
 
