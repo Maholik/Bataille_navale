@@ -392,62 +392,76 @@ void Server::onReadyRead()
 
         Board* targetBoard = gamemodel->getOppositePlayer()->getBoard();
 
-        // collecte bateaux touchés pour test coulé "après"
-        QSet<Boat*> touchedBoats;
-
-        // scoring cumulatif du missile
+        // Stats du missile
         int hitsThisMissile = 0;
-        int sunkThisMissile = 0;
+        QSet<Boat*> boatsBefore;   // bateaux rencontrés avant tirs
+        QSet<Boat*> boatsAfter;    // bateaux encore vivants après tirs (pour comparer)
+
+        // --- 1) Collecte des bateaux concernés AVANT ---
+        auto findBoatAtLocal = [](Board* board, int r, int c)->Boat* {
+            Case* cell = board->getCase(r,c);
+            for (Boat* b : board->getAllBoats()) {
+                const auto& s = b->getStructure();
+                if (std::find(s.begin(), s.end(), cell) != s.end()) return b;
+            }
+            return nullptr;
+        };
 
         for (int dr = -1; dr <= 1; ++dr) {
             for (int dc = -1; dc <= 1; ++dc) {
                 int r = row + dr, c = col + dc;
                 if (r < 0 || r >= targetBoard->getRows() || c < 0 || c >= targetBoard->getCols()) continue;
+                Boat* b = findBoatAtLocal(targetBoard, r, c);
+                if (b && !b->isSunk()) boatsBefore.insert(b);
+            }
+        }
 
-                // --- Détection du bateau AVANT tir ---
-                // On considère Occupied OU Hit (case déjà touchée) car elle appartient quand même à un bateau.
-                Case* before = targetBoard->getCase(r, c);
-                Boat* boatBefore = nullptr;
-                if (before->getStatus() == Case::Occupied || before->getStatus() == Case::Hit) {
-                    for (Boat* b : std::as_const(touchedBoats)) {
-                        if (b->isSunk()) sunkThisMissile++;
-                    }
+        // --- 2) Appliquer les 9 tirs + push UPDATE_CASE (sans swap de tour) ---
+        for (int dr = -1; dr <= 1; ++dr) {
+            for (int dc = -1; dc <= 1; ++dc) {
+                int r = row + dr, c = col + dc;
+                if (r < 0 || r >= targetBoard->getRows() || c < 0 || c >= targetBoard->getCols()) continue;
 
-                    // Scoring missile : +10 par Hit, +30 par bateau coulé (ajuste si besoin)
-                    for (int i = 0; i < hitsThisMissile; ++i)
-                        addScoreForHitAndSunk(roomId, attacker, /*hit=*/true,  /*sunk=*/false);
-                    for (int i = 0; i < sunkThisMissile; ++i)
-                        addScoreForHitAndSunk(roomId, attacker, /*hit=*/false, /*sunk=*/true);
-
-                    // Drop auto (tous les 4 tours) + fin de tour
-                    tryDropPowerEvery4Turns(roomId, attacker);
-                    gamemodel->changePlayer();
-
-                    // Statut & IA éventuelle
-                    sendStatusInfoToClients(roomId);
-                    if (roomAiMap.contains(roomId)
-                        && QString::fromStdString(gamemodel->getCurrentPlayer()->getName()) == "AI"
-                        && !gamemodel->isGameOver()) {
-                        QTimer::singleShot(300, [this, roomId]() { playAiTurn(roomId); });
-                    }
-
-                    if (boatBefore) touchedBoats.insert(boatBefore);
-                }
-
-                // --- Appliquer le tir même si la case était déjà touchée ---
+                // Tire (même si déjà touché) :
                 gamemodel->attackPlayer(r, c);
 
-                // --- Push update sans changer de joueur ---
-                QString rid = roomId;
-                sendUpdateCaseNoTurnSwap(rid, r, c);
-
-                // --- Compter un hit immédiat ---
+                // Compte un "hit" si la case est Hit après tir
                 if (targetBoard->getCase(r, c)->getStatus() == Case::Hit) {
                     hitsThisMissile++;
                 }
+
+                // Envoie la mise à jour de case sans changer de joueur
+                QString rid = roomId;
+                sendUpdateCaseNoTurnSwap(rid, r, c);
             }
         }
+
+        // --- 3) Compter les bateaux coulés par ce missile ---
+        int sunkThisMissile = 0;
+        for (Boat* b : std::as_const(boatsBefore)) {
+            if (b->isSunk()) sunkThisMissile++;
+        }
+
+        // --- 4) Scoring cumulé du missile ---
+        for (int i = 0; i < hitsThisMissile; ++i)
+            addScoreForHitAndSunk(roomId, attacker, /*hit=*/true,  /*sunk=*/false);
+        for (int i = 0; i < sunkThisMissile; ++i)
+            addScoreForHitAndSunk(roomId, attacker, /*hit=*/false, /*sunk=*/true);
+
+        // --- 5) Drop auto + FIN DE TOUR (une seule fois) ---
+        tryDropPowerEvery4Turns(roomId, attacker);
+        gamemodel->changePlayer();
+
+        // --- 6) Status + tour IA éventuel ---
+        sendStatusInfoToClients(roomId);
+
+        if (roomAiMap.contains(roomId)
+            && QString::fromStdString(gamemodel->getCurrentPlayer()->getName()) == "AI"
+            && !gamemodel->isGameOver()) {
+            QTimer::singleShot(300, [this, roomId]() { playAiTurn(roomId); });
+        }
     }
+
 
     else if(message.startsWith("QUIT_ROOM;")){
         QStringList parts = message.split(";");

@@ -226,17 +226,23 @@ void GameWindow::onQuitRoom() {
 
 void GameWindow::updateBoard(const QString& oppositePlayer, int row, int col, QString _case)
 {
-    if(oppositePlayer != this->playerName){
-        Clickablewidget *cardLabel = new Clickablewidget (_case,this);
-        ui->gridOppositeBoard->addWidget(cardLabel, row, col);
-        this->opponentBoard[row][col] = cardLabel;
-    }
-    else{
-        Clickablewidget *cardLabel1 = new Clickablewidget (_case,this);
-        ui->gridCurrentBoard->addWidget(cardLabel1, row, col);
-        this->myBoard[row][col] = cardLabel1;
+    if (oppositePlayer != this->playerName) {
+        // plateau adverse
+        Clickablewidget *w = new Clickablewidget(_case, this);
+        connect(w, &Clickablewidget::clicked, this, [this,row,col](){
+            onElementClicked(row, col, /*isOpponentBoard=*/true);
+        });
+        ui->gridOppositeBoard->addWidget(w, row, col);
+        this->opponentBoard[row][col] = w;
+    } else {
+        // mon plateau
+        Clickablewidget *w = new Clickablewidget(_case, this);
+        // (pas besoin de clics sur mon plateau, mais on peut ignorer)
+        ui->gridCurrentBoard->addWidget(w, row, col);
+        this->myBoard[row][col] = w;
     }
 }
+
 
 void GameWindow::statusModification(const QString& currentPlayer, bool isGameOver, const QString& playerWinner){
     ui->currentPlayerLabel->setText(currentPlayer);
