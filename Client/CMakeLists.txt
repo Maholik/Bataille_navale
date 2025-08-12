@@ -22,7 +22,11 @@ add_executable(Client
     startwindow.ui
     gamewindow.h
     gamewindow.cpp
-    gamewindow.ui)
+    gamewindow.ui
+    spectatorwindow.h
+    spectatorwindow.cpp
+    spectatorwindow.ui
+)
 
 target_link_libraries (Client PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
 

@@ -101,143 +101,155 @@ static Boat* findBoatAt(Board* board, int row, int col) {
 
 void Server::sendBoardsUpdateToClients(QString& _roomId){
     Room* roomId = findRoomById(_roomId);
-    for (QTcpSocket *client : roomId->clients) {
-        QString roomInfo = "BOARD_CREATE;";
-        Game* gamemodel = this->roomGameMap[_roomId];
-        gamemodel->displayBoards();
-        roomInfo += QString::number(gamemodel->getPlayer1()->getBoard()->getRows()) + ";";
-        roomInfo += QString::number(gamemodel->getPlayer1()->getBoard()->getCols()) + ";";
-        roomInfo += QString::fromStdString(gamemodel->getPlayer1()->getName()) + ";";
-        //Creation du plateau
-        for (int row = 0; row < gamemodel->getPlayer1()->getBoard()->getRows(); ++row) {
-            for (int col = 0; col < gamemodel->getPlayer1()->getBoard()->getCols(); ++col) {
-                QString _caseString;
-                Case* _case = gamemodel->getPlayer1()->getBoard()->getCase(row,col);
-                switch (_case->getStatus()) {
-                case Case::Empty: _caseString = "E"; break;    // Case vide
-                case Case::Hit: _caseString = "H"; break;      // Touché
-                case Case::Miss: _caseString = "M"; break;     // Manqué
-                case Case::Occupied:
-                    std::vector<Boat*> allBoats = gamemodel->getPlayer1()->getBoard()->getAllBoats();
-                    for (Boat* _element: allBoats) {
-                        if (std::find(_element->getStructure().begin(), _element->getStructure().end(), _case) != _element->getStructure().end()) {
-                            switch (_element->getSize()) {
-                            case 2 : _caseString = "D"; break;
-                            case 3 : _caseString = "S"; break;
-                            case 4 : _caseString = "C"; break;
-                            case 5 : _caseString = "P"; break;
-                            }
-                        }
-                    }
-                }
-                roomInfo += _caseString + ";";
-            }
-        }
+    if (!roomId) return;
 
-        roomInfo += QString::fromStdString(gamemodel->getPlayer2()->getName()) + ";";
-        //Creation du plateau
-        for (int row1 = 0; row1 < gamemodel->getPlayer2()->getBoard()->getRows(); ++row1) {
-            for (int col1 = 0; col1 < gamemodel->getPlayer2()->getBoard()->getCols(); ++col1) {
-                QString _caseString1;
-                Case* _case1 = gamemodel->getPlayer2()->getBoard()->getCase(row1,col1);
-                switch (_case1->getStatus()) {
-                case Case::Empty: _caseString1 = "E"; break;    // Case vide
-                case Case::Hit: _caseString1 = "H"; break;      // Touché
-                case Case::Miss: _caseString1 = "M"; break;     // Manqué
-                case Case::Occupied:
-                    std::vector<Boat*> allBoats1 = gamemodel->getPlayer2()->getBoard()->getAllBoats();
-                    for (Boat* _element1: allBoats1) {
-                        if (std::find(_element1->getStructure().begin(), _element1->getStructure().end(), _case1) != _element1->getStructure().end()) {
-                            switch (_element1->getSize()) {
-                            case 2 : _caseString1 = "D"; break;
-                            case 3 : _caseString1 = "S"; break;
-                            case 4 : _caseString1 = "C"; break;
-                            case 5 : _caseString1 = "P"; break;
-                            }
+    QString roomInfo = "BOARD_CREATE;";
+    Game* gamemodel = this->roomGameMap[_roomId];
+    gamemodel->displayBoards();
+
+    // Dimensions + joueur 1
+    roomInfo += QString::number(gamemodel->getPlayer1()->getBoard()->getRows()) + ";";
+    roomInfo += QString::number(gamemodel->getPlayer1()->getBoard()->getCols()) + ";";
+    roomInfo += QString::fromStdString(gamemodel->getPlayer1()->getName()) + ";";
+
+    // Plateau joueur 1
+    for (int row = 0; row < gamemodel->getPlayer1()->getBoard()->getRows(); ++row) {
+        for (int col = 0; col < gamemodel->getPlayer1()->getBoard()->getCols(); ++col) {
+            QString _caseString;
+            Case* _case = gamemodel->getPlayer1()->getBoard()->getCase(row,col);
+            switch (_case->getStatus()) {
+            case Case::Empty: _caseString = "E"; break;
+            case Case::Hit: _caseString = "H"; break;
+            case Case::Miss: _caseString = "M"; break;
+            case Case::Occupied: {
+                std::vector<Boat*> allBoats = gamemodel->getPlayer1()->getBoard()->getAllBoats();
+                for (Boat* _element: allBoats) {
+                    if (std::find(_element->getStructure().begin(), _element->getStructure().end(), _case) != _element->getStructure().end()) {
+                        switch (_element->getSize()) {
+                        case 2 : _caseString = "D"; break;
+                        case 3 : _caseString = "S"; break;
+                        case 4 : _caseString = "C"; break;
+                        case 5 : _caseString = "P"; break;
                         }
                     }
                 }
-                roomInfo += _caseString1 + ";";
+            } break;
             }
+            roomInfo += _caseString + ";";
         }
-        roomInfo += "\n";
-        qDebug() <<"Je suis a la fin, le roomInfo est: " << roomInfo;
-        client->write(roomInfo.toUtf8());
-        qDebug() << "Boards sont envoyes aux clients";
     }
+
+    // Joueur 2 + plateau joueur 2
+    roomInfo += QString::fromStdString(gamemodel->getPlayer2()->getName()) + ";";
+    for (int row1 = 0; row1 < gamemodel->getPlayer2()->getBoard()->getRows(); ++row1) {
+        for (int col1 = 0; col1 < gamemodel->getPlayer2()->getBoard()->getCols(); ++col1) {
+            QString _caseString1;
+            Case* _case1 = gamemodel->getPlayer2()->getBoard()->getCase(row1,col1);
+            switch (_case1->getStatus()) {
+            case Case::Empty: _caseString1 = "E"; break;
+            case Case::Hit: _caseString1 = "H"; break;
+            case Case::Miss: _caseString1 = "M"; break;
+            case Case::Occupied: {
+                std::vector<Boat*> allBoats1 = gamemodel->getPlayer2()->getBoard()->getAllBoats();
+                for (Boat* _element1: allBoats1) {
+                    if (std::find(_element1->getStructure().begin(), _element1->getStructure().end(), _case1) != _element1->getStructure().end()) {
+                        switch (_element1->getSize()) {
+                        case 2 : _caseString1 = "D"; break;
+                        case 3 : _caseString1 = "S"; break;
+                        case 4 : _caseString1 = "C"; break;
+                        case 5 : _caseString1 = "P"; break;
+                        }
+                    }
+                }
+            } break;
+            }
+            roomInfo += _caseString1 + ";";
+        }
+    }
+    roomInfo += "\n";
+
+    auto sendToParticipants = [&](const QString& text) {
+        for (QTcpSocket* c : roomId->clients)     c->write(text.toUtf8());
+        for (QTcpSocket* s : roomId->spectators)  s->write(text.toUtf8());
+    };
+
+    sendToParticipants(roomInfo);
+    qDebug() << "Boards envoyés aux participants";
 }
+
 
 void Server::sendUpdateCaseToClients(QString& _roomId, int row, int col){
     Room* roomId = findRoomById(_roomId);
+    if (!roomId) return;
+
     Game* gamemodel = this->roomGameMap[_roomId];
-    for (QTcpSocket *client : roomId->clients) {
+
+    auto sendToParticipants = [&](const QString& text) {
+        for (QTcpSocket* c : roomId->clients)     c->write(text.toUtf8());
+        for (QTcpSocket* s : roomId->spectators)  s->write(text.toUtf8());
+    };
+
+    // --- UPDATE_CASE ---
+    {
         QString roomInfo = "UPDATE_CASE;";
         Case* _case = gamemodel->getOppositePlayer()->getBoard()->getCase(row,col);
         roomInfo += QString::fromStdString(gamemodel->getOppositePlayer()->getName()) + ";" + QString::number(row) + ";" + QString::number(col) + ";";
         QString _caseString = "X";
         switch (_case->getStatus()) {
-        case Case::Hit: _caseString = "H"; break;      // Touché
-        case Case::Miss: _caseString = "M"; break;     // Manqué
+        case Case::Hit:  _caseString = "H"; break;
+        case Case::Miss: _caseString = "M"; break;
+        default: break;
         }
         roomInfo += _caseString + ";\n";
-        client->write(roomInfo.toUtf8());
-        qDebug() << "Update envoyée : " << roomInfo;
+        sendToParticipants(roomInfo);
+        qDebug() << "Update envoyée (participants) : " << roomInfo;
     }
-    // --- Détection "coulé" ---
+
+    // --- Détection "coulé" -> BOAT_SUNK pour tous ---
     Board* oppBoard = gamemodel->getOppositePlayer()->getBoard();
     Boat* hitBoat = findBoatAt(oppBoard, row, col);
-
     if (hitBoat && hitBoat->isSunk()) {
-        // Construire le message: BOAT_SUNK;ownerName;N;row1;col1;...;rowN;colN
         QString sunkMsg = "BOAT_SUNK;";
         sunkMsg += QString::fromStdString(gamemodel->getOppositePlayer()->getName()) + ";";
-
         const auto& cells = hitBoat->getStructure();
         sunkMsg += QString::number(static_cast<int>(cells.size())) + ";";
-        for (Case* cell : cells) {
+        for (Case* cell : cells)
             sunkMsg += QString::number(cell->getRow()) + ";" + QString::number(cell->getCol()) + ";";
-        }
         sunkMsg += "\n";
-
-        for (QTcpSocket *client : roomId->clients) {
-            client->write(sunkMsg.toUtf8());
-        }
+        sendToParticipants(sunkMsg);
     }
-    // --- scoring & drop pour TIR SIMPLE (1 case) ---
+
+    // --- scoring/drop + swap comme avant ---
     {
         QString attacker = QString::fromStdString(gamemodel->getCurrentPlayer()->getName());
-
-        // évalue hit/sunk depuis l'état déjà appliqué
-        Board* oppBoard = gamemodel->getOppositePlayer()->getBoard();
-        Case* cell = oppBoard->getCase(row, col);
+        Board* opp = gamemodel->getOppositePlayer()->getBoard();
+        Case* cell = opp->getCase(row, col);
         bool hit = (cell->getStatus() == Case::Hit);
-
-        // on a déjà le test sunk ci-dessus (hitBoat)
         bool sunk = (hitBoat && hitBoat->isSunk());
-
         addScoreForHitAndSunk(_roomId, attacker, hit, sunk);
-
-        // drop aléatoire tous les 4 tours
         tryDropPowerEvery4Turns(_roomId, attacker);
     }
-
-
     gamemodel->changePlayer();
 }
 
+
 void Server::sendStatusInfoToClients(QString& _roomId){
     Room* roomId = findRoomById(_roomId);
-    for (QTcpSocket *_client : qAsConst(roomId->clients)) {
-        QString roomInfo = "STATUS;";
-        Game* gamemodel = this->roomGameMap[_roomId];
-        roomInfo += QString::fromStdString(gamemodel->getCurrentPlayer()->getName()) + ";";
-        roomInfo += QString::number(gamemodel->isGameOver()) + ";";
-        roomInfo += QString::fromStdString(gamemodel->getWinner());
-        roomInfo += "\n";
-        _client->write(roomInfo.toUtf8());
-        qDebug() << "Status envoyée : " << roomInfo;
-    }
+    if (!roomId) return;
+
+    QString roomInfo = "STATUS;";
+    Game* gamemodel = this->roomGameMap[_roomId];
+    roomInfo += QString::fromStdString(gamemodel->getCurrentPlayer()->getName()) + ";";
+    roomInfo += QString::number(gamemodel->isGameOver()) + ";";
+    roomInfo += QString::fromStdString(gamemodel->getWinner());
+    roomInfo += "\n";
+
+    for (QTcpSocket *_client : qAsConst(roomId->clients))    _client->write(roomInfo.toUtf8());
+    for (QTcpSocket *_spec   : qAsConst(roomId->spectators)) _spec->write(roomInfo.toUtf8());
+
+    qDebug() << "Status envoyée (participants) : " << roomInfo;
 }
+
 
 void Server::sendErrorMessageToClients(QString& _roomId, QString& errorMessage){
     Room* roomId = findRoomById(_roomId);
@@ -512,6 +524,38 @@ void Server::onReadyRead()
         }
     }
 
+    else if (message.startsWith("SPECTATE_ROOM;")) {
+        QStringList parts = message.split(";", Qt::SkipEmptyParts);
+        // SPECTATE_ROOM;nickname;roomId;[password]
+        if (parts.size() < 3) { clientSocket->write("ERR_INVALID_PASSWORD_OR_ROOM_NOT_FOUND\n"); return; }
+
+        QString nickname = parts[1];
+        QString roomId   = parts[2];
+        QString password = parts.size() > 3 ? parts[3] : "";
+
+        // mémoriser le pseudo pour ce socket (comme pour JOIN_ROOM)
+        int idClient = clientIdMap[clientSocket];
+        clientToNameMap[idClient] = nickname;
+
+        if (!checkSpectatorAccess(roomId, password)) {
+            clientSocket->write("ERR_INVALID_PASSWORD_OR_ROOM_NOT_FOUND\n");
+            return;
+        }
+
+        Room* room = findRoomById(roomId);
+        clientRoomMap[clientSocket] = roomId;
+        room->spectators.append(clientSocket);
+
+        // Accusé de réception spécifique spectateur
+        clientSocket->write(QString("SPECTATE_OK;%1\n").arg(roomId).toUtf8());
+        clientSocket->flush();
+
+        // Envoyer tout de suite l'état courant
+        sendBoardsUpdateToClients(roomId);  // va être étendu pour cibler aussi spectators
+        sendStatusInfoToClients(roomId);
+    }
+
+
 
     else if (message.startsWith("START_SOLO;")) {
         QStringList parts = message.split(';');
@@ -557,73 +601,107 @@ bool Server::checkRoomAccess(const QString &id_room, const QString &password)
 
 void Server::onRoomDisconnected(const QString& roomId)
 {
-    QTcpSocket *clientSocket = qobject_cast<QTcpSocket *>(sender());
-    if (clientSocket) {
-        // Trouver la room du client
-        Room* room = findRoomById(roomId);
-        if (room) {
-            // Si la room contient d'autres clients, informer qu'elle est fermée
-            if (room->clients.size() > 1) {
-                QString leaveMessage = "CLIENT_LEFT_ROOM;\n";
-                for (QTcpSocket *otherClient : room->clients) {
-                    if (otherClient != clientSocket) {
-                        otherClient->write(leaveMessage.toUtf8());
-                    }
-                }
-            }
+    QTcpSocket *clientSocket = qobject_cast<QTcpSocket *>(sender()); // joueur qui a quitté via QUIT_ROOM
+    Room* room = findRoomById(roomId);
+    if (!room) return;
 
-            // Supprimer tous les clients de la room
-            for (QTcpSocket *client : room->clients) {
-                clientRoomMap.remove(client);  // Retirer chaque client de la map
-            }
-            room->clients.clear();  // Vider la liste des clients
-            room->clientCount=0;
+    // 1) Prévenir tout le monde que la room est fermée (autre joueur + tous les spectateurs)
+    const QString leaveMessage = "CLIENT_LEFT_ROOM;\n";
 
-            // Supprimer l'objet Game associé à la room
-            if (roomGameMap.contains(roomId)) {
-                this->games.removeOne(roomGameMap[roomId]);
-                delete roomGameMap[roomId];
-                roomGameMap.remove(roomId);
-            }
-
-            // Mettre à jour la liste des rooms pour tous les autres clients
-            sendRoomInfoToClients();
+    // Autres joueurs
+    for (QTcpSocket *otherClient : room->clients) {
+        if (otherClient != clientSocket) {
+            otherClient->write(leaveMessage.toUtf8());
+        }
+    }
+    // Spectateurs
+    for (QTcpSocket *spec : room->spectators) {
+        if (spec != clientSocket) { // par principe ; clientSocket n'est normalement pas spectateur
+            spec->write(leaveMessage.toUtf8());
         }
     }
 
+    // 2) Nettoyer les mappings room -> sockets
+    for (QTcpSocket *c : room->clients) {
+        clientRoomMap.remove(c);
+    }
+    for (QTcpSocket *s : room->spectators) {
+        clientRoomMap.remove(s);
+    }
 
+    // 3) Vider les listes et remonter les compteurs à zéro
+    room->clients.clear();
+    room->clientCount = 0;
+
+    room->spectators.clear();
+    room->spectatorCount = 0;
+
+    // 4) Détruire le Game associé (comme avant)
+    if (roomGameMap.contains(roomId)) {
+        this->games.removeOne(roomGameMap[roomId]);
+        delete roomGameMap[roomId];
+        roomGameMap.remove(roomId);
+    }
+
+    // 5) Mettre à jour la liste des rooms
+    sendRoomInfoToClients();
 }
+
 
 void Server::onDisconnected()
 {
     QTcpSocket *clientSocket = qobject_cast<QTcpSocket *>(sender());
-    if (clientSocket) {
-        // Trouver la room du client et décrémenter le nombre de clients
-        Room* room = findRoomById(clientRoomMap[clientSocket]);
-        if (room) {
-            room->clientCount--;
-            sendRoomInfoToClients();  // Met à jour la liste des rooms
-        }
+    if (!clientSocket) return;
 
-        clients.removeOne(clientSocket);
-        clientSocket->deleteLater();
-        qDebug() << "Un client s'est déconnecté.";
+    // Retrouver la room (si ce socket en avait une)
+    const QString rid = clientRoomMap.value(clientSocket, QString());
+    Room* room = (!rid.isEmpty() ? findRoomById(rid) : nullptr);
+
+    if (room) {
+        // Le socket peut être un joueur OU un spectateur
+        bool wasClient    = room->clients.removeOne(clientSocket);
+        bool wasSpectator = room->spectators.removeOne(clientSocket);
+
+        if (wasClient && room->clientCount > 0)
+            room->clientCount--;
+        if (wasSpectator && room->spectatorCount > 0)
+            room->spectatorCount--;
+
+        // Ne pas toucher clientCount si c'était un spectateur
+        // Met à jour la liste des rooms pour tous
+        sendRoomInfoToClients();  // affiche les rooms avec clientCount à jour
     }
+
+    // Nettoyage des structures globales
+    clientRoomMap.remove(clientSocket);
+    clients.removeOne(clientSocket);
+    clientSocket->deleteLater();
+
+    qDebug() << "Un client s'est déconnecté.";
 }
+
 
 void Server::broadcastMessageToRoom(const QString& roomId, const QString& chatMessage)
 {
     Room* room = findRoomById(roomId);
-    if (room) {
-        QTcpSocket* senderSocket = qobject_cast<QTcpSocket*>(sender());
+    if (!room) return;
 
-        // Diffuser le message à tous les clients sauf l'envoyeur
-        for (QTcpSocket* client : room->clients) {
-            if (client != senderSocket) {  // Ne pas renvoyer au client qui a envoyé le message
-                QString formattedMessage = QString("SEND_CHAT_MESSAGE;%1;%2").arg(clientToNameMap[clientIdMap[senderSocket]], chatMessage);
-                client->write(formattedMessage.toUtf8());
-                client->flush();
-            }
+    QTcpSocket* senderSocket = qobject_cast<QTcpSocket*>(sender());
+    const QString from = clientToNameMap[clientIdMap[senderSocket]];
+    const QString formatted = QString("SEND_CHAT_MESSAGE;%1;%2").arg(from, chatMessage);
+
+    // Clients
+    for (QTcpSocket* client : room->clients) {
+        if (client != senderSocket) {
+            client->write(formatted.toUtf8());
+            client->flush();
+        }
+    }
+    // Spectateurs
+    for (QTcpSocket* spec : room->spectators) {
+        if (spec != senderSocket) {
+            spec->write(formatted.toUtf8());
+            spec->flush();
         }
     }
 }
@@ -738,42 +816,45 @@ void Server::playAiTurn(const QString& roomId)
 void Server::sendUpdateCaseNoTurnSwap(QString& _roomId, int row, int col)
 {
     Room* roomId = findRoomById(_roomId);
+    if (!roomId) return;
+
     Game* gamemodel = this->roomGameMap[_roomId];
 
-    // envoi de l'état de case (H/M) côté joueur opposé actuel
-    for (QTcpSocket *client : roomId->clients) {
+    auto sendToParticipants = [&](const QString& text) {
+        for (QTcpSocket* c : roomId->clients)     c->write(text.toUtf8());
+        for (QTcpSocket* s : roomId->spectators)  s->write(text.toUtf8());
+    };
+
+    // UPDATE_CASE sans swap
+    {
         QString roomInfo = "UPDATE_CASE;";
         Case* _case = gamemodel->getOppositePlayer()->getBoard()->getCase(row,col);
         roomInfo += QString::fromStdString(gamemodel->getOppositePlayer()->getName()) + ";" + QString::number(row) + ";" + QString::number(col) + ";";
         QString _caseString = "X";
         switch (_case->getStatus()) {
-        case Case::Hit: _caseString = "H"; break;
+        case Case::Hit:  _caseString = "H"; break;
         case Case::Miss: _caseString = "M"; break;
         default: break;
         }
         roomInfo += _caseString + ";\n";
-        client->write(roomInfo.toUtf8());
+        sendToParticipants(roomInfo);
     }
 
-    // détection "coulé" → envoi BOAT_SUNK si besoin (mais PAS de changePlayer ici)
+    // Détection "coulé" → BOAT_SUNK (sans swap)
     Board* oppBoard = gamemodel->getOppositePlayer()->getBoard();
     Boat* hitBoat = findBoatAt(oppBoard, row, col);
     if (hitBoat && hitBoat->isSunk()) {
         QString sunkMsg = "BOAT_SUNK;";
         sunkMsg += QString::fromStdString(gamemodel->getOppositePlayer()->getName()) + ";";
-
         const auto& cells = hitBoat->getStructure();
         sunkMsg += QString::number(static_cast<int>(cells.size())) + ";";
-        for (Case* cell : cells) {
+        for (Case* cell : cells)
             sunkMsg += QString::number(cell->getRow()) + ";" + QString::number(cell->getCol()) + ";";
-        }
         sunkMsg += "\n";
-
-        for (QTcpSocket *client : roomId->clients) {
-            client->write(sunkMsg.toUtf8());
-        }
+        sendToParticipants(sunkMsg);
     }
 }
+
 
 void Server::broadcastScoreAndInv(const QString& roomId, const QString& player) {
     Room* room = findRoomById(roomId);
@@ -785,6 +866,7 @@ void Server::broadcastScoreAndInv(const QString& roomId, const QString& player) 
                       .arg(ps.scanners)
                       .arg(ps.missiles);
     for (QTcpSocket* c : room->clients) c->write(msg.toUtf8());
+    //Envoi score et inventaire for (QTcpSocket* s : room->spectators) s->write(msg.toUtf8());
 }
 
 // règles de score (ajuste si tu veux)
@@ -851,6 +933,22 @@ void Server::consumeScannerOrPay(const QString& roomId, const QString& attacker)
     else                 ps.score -= SCANNER_COST;
     broadcastScoreAndInv(roomId, attacker);
 }
+
+bool Server::checkSpectatorAccess(const QString &id_room, const QString &password)
+{
+    Room* room = findRoomById(id_room);
+    if (!room) return false;
+    if (room->type == "privée" && room->password != password) return false;
+
+               // Option : n’autoriser que si une partie est en cours (2 joueurs déjà prêts)
+               const bool gameRunning = roomGameMap.contains(id_room);
+    if (!gameRunning) return false;
+
+    room->spectatorCount++;
+    return true;
+}
+
+
 
 
 

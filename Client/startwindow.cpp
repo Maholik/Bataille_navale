@@ -10,6 +10,7 @@
 #include <QDebug>
 #include <QLabel>
 #include <QInputDialog>
+#include "spectatorwindow.h"
 
 
 StartWindow::StartWindow(QWidget *parent) :
@@ -209,10 +210,24 @@ void StartWindow::onReadyRead()
         else if (message.startsWith("ERR_INVALID_PASSWORD_OR_ROOM_NOT_FOUND")) {
             QMessageBox::warning(this, "Erreur", "Salle introuvable ou mot de passe invalide.");
         }
+
+        else if (message.startsWith("SPECTATE_OK;")) {
+            QString roomId = message.split(';', Qt::SkipEmptyParts).value(1);
+            // ouvrir la fenêtre spectateur
+            disconnect(socket, &QTcpSocket::readyRead, this, &StartWindow::onReadyRead);
+            SpectatorWindow* w = new SpectatorWindow(roomId, socket, this);
+            connect(w, &SpectatorWindow::spectateAborted, this, [this](){
+                this->show();
+                connect(socket, &QTcpSocket::readyRead, this, &StartWindow::onReadyRead);
+            });
+            w->show();
+            this->hide();
+        }
         else {
             qDebug() << "Message non reconnu :" << message;
         }
     }
+
 }
 
 
@@ -290,4 +305,43 @@ void StartWindow::on_iaButton_clicked()
     socket->flush();
 }
 
+
+
+void StartWindow::on_btnSpectate_clicked()
+{
+    QDialog dialog(this);
+    dialog.setWindowTitle("Spectate une salle");
+
+    QLineEdit *lineEditName = new QLineEdit(&dialog);
+    lineEditName->setPlaceholderText("Votre pseudo (spectateur)");
+
+    QLineEdit *lineEditRoomId = new QLineEdit(&dialog);
+    lineEditRoomId->setPlaceholderText("ID de la salle");
+
+    QLineEdit *lineEditPassword = new QLineEdit(&dialog);
+    lineEditPassword->setPlaceholderText("Mot de passe (si privé)");
+        lineEditPassword->setEchoMode(QLineEdit::Password);
+
+    QVBoxLayout *layout = new QVBoxLayout;
+    layout->addWidget(lineEditName);
+    layout->addWidget(lineEditRoomId);
+    layout->addWidget(lineEditPassword);
+    QPushButton *btnGo = new QPushButton("Spectate", &dialog);
+    layout->addWidget(btnGo);
+    dialog.setLayout(layout);
+    connect(btnGo, &QPushButton::clicked, &dialog, &QDialog::accept);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        QString nick = lineEditName->text().trimmed();
+        QString rid  = lineEditRoomId->text().trimmed();
+        QString pwd  = lineEditPassword->text();
+
+        if (nick.isEmpty() || rid.isEmpty()) {
+            QMessageBox::warning(this, "Erreur", "Pseudo et ID Room requis.");
+            return;
+        }
+        socket->write(QString("SPECTATE_ROOM;%1;%2;%3\n").arg(nick, rid, pwd).toUtf8());
+        socket->flush();
+    }
+}
 

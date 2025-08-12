@@ -25,6 +25,8 @@ private slots:
 
     void on_iaButton_clicked();
 
+    void on_btnSpectate_clicked();
+
 private:
     Ui::StartWindow *ui;
     QTcpSocket *socket;

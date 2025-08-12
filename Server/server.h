@@ -41,6 +41,8 @@ private:
         QString password;
         int clientCount;
         QList<QTcpSocket*> clients;
+        int spectatorCount = 0;
+        QList<QTcpSocket*> spectators;
     };
 
     // --- ÉTAT PAR JOUEUR (score, drops, inventaire) ---
@@ -89,6 +91,9 @@ private:
     // achat/usage scanner (reconnaissance)
     bool canUseScanner(const QString& roomId, const QString& attacker) const;
     void consumeScannerOrPay(const QString& roomId, const QString& attacker);
+
+    bool checkSpectatorAccess(const QString& id_room, const QString& password);
+
 
 
 
