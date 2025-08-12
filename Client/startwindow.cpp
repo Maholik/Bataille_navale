@@ -291,6 +291,3 @@ void StartWindow::on_iaButton_clicked()
 }
 
 
-
-
-

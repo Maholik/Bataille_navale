@@ -146,9 +146,4 @@ int Game::reconnaissanceZone(int row, int col) {
     return static_cast<int>(seen.size());
 }
 
-void Game::placeBoatsRandomlyFor(Player* player) {
-    placeBoatsRandomly(player);
-}
-
-
 

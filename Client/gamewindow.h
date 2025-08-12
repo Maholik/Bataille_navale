@@ -4,8 +4,6 @@
 #include <QMainWindow>
 #include <QTcpSocket>
 #include "Clickablewidget.h"
-#include <QPushButton>
-
 
 namespace Ui {
 class GameWindow;
@@ -47,20 +45,6 @@ private:
     std::vector<std::vector<Clickablewidget*>> myBoard; ///< Plateau de jeu graphique.
     std::vector<std::vector<Clickablewidget*>> opponentBoard;
     bool isMissilePowerActive = false;
-
-    // --- Placement ---
-    bool isPlacementPhase = false;
-    QVector<int> boatsRemaining;
-    int  currentPlacementSize = -1;
-    bool placementHorizontal = true;
-    QPushButton* rotateButton = nullptr;
-    QPushButton* finishPlacementButton = nullptr;
-
-    void setupEmptyBoards(int rows, int cols);
-    void tryPlaceAt(int row, int col);
-    void applyPlacementLocally(int size, int row, int col, bool horizontal);
-    QString letterForSize(int size) const;
-
 
 };
 

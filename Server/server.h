@@ -49,11 +49,6 @@ private:
         int turnsSinceDrop = 0;  // +1 à chaque tour joué ; drop à 4
         int scanners = 0;
         int missiles = 0;
-
-        // --- Placement ---
-        bool inPlacement = true;      // en phase de placement ?
-        bool placementDone = false;   // a fini ?
-        QVector<int> boatsToPlace;    // tailles restantes (ex: {5,4,3,3,2})
     };
 
     QTcpServer *server;
@@ -94,14 +89,6 @@ private:
     // achat/usage scanner (reconnaissance)
     bool canUseScanner(const QString& roomId, const QString& attacker) const;
     void consumeScannerOrPay(const QString& roomId, const QString& attacker);
-
-
-    // Helpers placement
-    Player* getPlayerByName(Game* game, const QString& name);
-    QString getPlayerNameForSocket(QTcpSocket* socket);
-    void beginPlacementPhase(const QString& roomId, bool soloAiPlaced);
-    void maybeStartGameAfterPlacement(const QString& roomId);
-
 
 
 

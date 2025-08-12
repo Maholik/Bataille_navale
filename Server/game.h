@@ -28,8 +28,6 @@ public:
     void attackPlayer(int row, int col);
 
     void displayBoards() const;
-    void placeBoatsRandomlyFor(Player* player);
-
 
 private:
     Player* m_player1;          // Joueur 1
