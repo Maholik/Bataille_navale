@@ -9,7 +9,7 @@ Clickablewidget::Clickablewidget(QString _element,QWidget* parent, Qt::WindowFla
         {"H", Qt::black},              // Noir
         {"M", Qt::darkBlue},           // Bleu foncé
         {"D", QColor(95, 158, 160)},   // Bleu sarcelle
-        {"S", Qt::blue},               // Bleu
+        {"S", QColor(255, 165, 0)},   // Orange
         {"C", QColor(218, 112, 214)},  // Violet
         {"P", QColor(255, 0, 0)},     // Rouge
         {"X", Qt::darkGray}
@@ -30,23 +30,24 @@ Clickablewidget::Clickablewidget(QString _element,QWidget* parent, Qt::WindowFla
 void Clickablewidget::setCase(const QString& _element){
     this->caseElement = _element;
 
-    if (this->sunkHighlighted) {
-        // on garde l'or, ne pas changer la palette
-        return;
-    }
-
+    // Table de correspondance entre les chaînes et les couleurs
     static const QMap<QString, QColor> colorMap = {
-                                                   {"H", Qt::black},
-                                                   {"M", Qt::darkBlue},
-                                                   };
+        {"H", Qt::black},              // Noir
+        {"M", Qt::darkBlue},           // Bleu foncé
+    };
+
     QPalette pal = this->palette();
-    QColor color = colorMap.value(caseElement, Qt::white);
+
+    // Cherche la couleur dans la table, ou prend une couleur par défaut si non trouvée
+    QColor color = colorMap.value(caseElement, Qt::white);  // Blanc par défaut
+    //qDebug() << "MILIEU SET CASE : " << color;
     pal.setColor(QPalette::Window, color);
-    this->setAutoFillBackground(true);
+
+    this->setAutoFillBackground(true);  // Indique à Qt de remplir l'arrière-plan
     this->setPalette(pal);
+
     this->setMinimumSize(20,20);
 }
-
 
 QString Clickablewidget::getCase(){
     return this->caseElement;
@@ -60,8 +61,7 @@ void Clickablewidget::mousePressEvent(QMouseEvent* event) {
 
 void Clickablewidget::setSunkHighlight() {
     QPalette pal = this->palette();
-    pal.setColor(QPalette::Window, QColor("gold"));
+    pal.setColor(QPalette::Window, QColor("gold")); // Or
     this->setAutoFillBackground(true);
     this->setPalette(pal);
-    this->sunkHighlighted = true;   // <- important
 }

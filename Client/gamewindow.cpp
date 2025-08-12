@@ -124,18 +124,20 @@ void GameWindow::onReadyRead() {
             this->close();       // Ferme la GameWindow
         }
         else if (msg.startsWith("SEND_CHAT_MESSAGE;")) {
-            QStringList parts = msg.split(";");  // <- msg !
-            QString playerMessage = parts[1];
-            QString chatMessage   = parts[2];
-            ui->messageIncomeBox->append(playerMessage + ": " + chatMessage);
-        }
-        else if (msg.startsWith("RECONNAISANCE_RESULT;")) {
-            QStringList parts = msg.split(";");  // <- msg !
-            int nbBateaux = parts[1].toInt();
-            ui->messageIncomeBox->append(
-                "Resultat Reconnaisance : " + QString::number(nbBateaux) + " Bateau(x) sont presents dans la zone");
-        }
+            QStringList parts = message.split(";");
+            QString playerMessage = parts[1];        // Nom du joueur qui a envoyé le message
+            QString chatMessage = parts[2];   // Contenu du message
 
+            // Afficher le message dans le QTextBrowser
+            QString formattedMessage = playerMessage + ": " + chatMessage;
+            ui->messageIncomeBox->append(formattedMessage);
+        }
+        else if(msg.startsWith("RECONNAISANCE_RESULT;")){
+            QStringList parts = message.split(";");
+            int nbBateaux = parts[1].toInt();
+            QString formattedMessage = "Resultat Reconnaisance : " + QString::number(nbBateaux) + " Bateaux sont presents dans la zone";
+            ui->messageIncomeBox->append(formattedMessage);
+        }
 
         else if (msg.startsWith("POWER_AVAILABLE;")) {
             auto parts = msg.split(';', Qt::SkipEmptyParts);
@@ -225,27 +227,21 @@ void GameWindow::onQuitRoom() {
 void GameWindow::updateBoard(const QString& oppositePlayer, int row, int col, QString _case)
 {
     if (oppositePlayer != this->playerName) {
-        auto* w = opponentBoard[row][col];
-        if (!w) {
-            w = new Clickablewidget("X", this);
-            connect(w, &Clickablewidget::clicked, this, [this,row,col](){
-                onElementClicked(row, col, /*isOpponentBoard=*/true);
-            });
-            ui->gridOppositeBoard->addWidget(w, row, col);
-            opponentBoard[row][col] = w;
-        }
-        w->setCase(_case); // ne touche pas au "gold" si already sunk
+        // plateau adverse
+        Clickablewidget *w = new Clickablewidget(_case, this);
+        connect(w, &Clickablewidget::clicked, this, [this,row,col](){
+            onElementClicked(row, col, /*isOpponentBoard=*/true);
+        });
+        ui->gridOppositeBoard->addWidget(w, row, col);
+        this->opponentBoard[row][col] = w;
     } else {
-        auto* w = myBoard[row][col];
-        if (!w) {
-            w = new Clickablewidget("X", this);
-            ui->gridCurrentBoard->addWidget(w, row, col);
-            myBoard[row][col] = w;
-        }
-        w->setCase(_case);
+        // mon plateau
+        Clickablewidget *w = new Clickablewidget(_case, this);
+        // (pas besoin de clics sur mon plateau, mais on peut ignorer)
+        ui->gridCurrentBoard->addWidget(w, row, col);
+        this->myBoard[row][col] = w;
     }
 }
-
 
 
 void GameWindow::statusModification(const QString& currentPlayer, bool isGameOver, const QString& playerWinner){
