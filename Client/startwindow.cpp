@@ -215,7 +215,8 @@ void StartWindow::onReadyRead()
             QString roomId = message.split(';', Qt::SkipEmptyParts).value(1);
             // ouvrir la fenêtre spectateur
             disconnect(socket, &QTcpSocket::readyRead, this, &StartWindow::onReadyRead);
-            SpectatorWindow* w = new SpectatorWindow(roomId, socket, this);
+            // NEW: on passe spectatorName
+            SpectatorWindow* w = new SpectatorWindow(roomId, socket, this->spectatorName, this);
             connect(w, &SpectatorWindow::spectateAborted, this, [this](){
                 this->show();
                 connect(socket, &QTcpSocket::readyRead, this, &StartWindow::onReadyRead);
@@ -223,6 +224,7 @@ void StartWindow::onReadyRead()
             w->show();
             this->hide();
         }
+
         else {
             qDebug() << "Message non reconnu :" << message;
         }
@@ -340,8 +342,13 @@ void StartWindow::on_btnSpectate_clicked()
             QMessageBox::warning(this, "Erreur", "Pseudo et ID Room requis.");
             return;
         }
+
+        // NEW: mémoriser le pseudo du spectateur
+        this->spectatorName = nick;
+
         socket->write(QString("SPECTATE_ROOM;%1;%2;%3\n").arg(nick, rid, pwd).toUtf8());
         socket->flush();
     }
+
 }
 

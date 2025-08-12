@@ -6,11 +6,10 @@
 #include <QRegularExpression>
 #include <QMessageBox>
 
-SpectatorWindow::SpectatorWindow(const QString& _roomId, QTcpSocket* _socket, QWidget* parent)
-    : QMainWindow(parent), roomId(_roomId), socket(_socket)
+SpectatorWindow::SpectatorWindow(const QString& _roomId, QTcpSocket* _socket, const QString& _spectatorName, QWidget* parent)
+    : QMainWindow(parent), roomId(_roomId), socket(_socket), spectatorName(_spectatorName)
 {
     setWindowTitle(QString("Bataille Navale — Spectateur (%1)").arg(roomId));
-
     central = new QWidget(this);
     setCentralWidget(central);
 
@@ -218,10 +217,16 @@ void SpectatorWindow::onSendMessage()
 {
     const QString text = chatEdit->toPlainText().trimmed();
     if (text.isEmpty()) return;
+
     socket->write(QString("CHAT_MESSAGE;%1;%2\n").arg(roomId, text).toUtf8());
     socket->flush();
+
+    // NEW: affichage local, car le serveur n'écho pas au sender
+    chatView->append(spectatorName + ": " + text);
+
     chatEdit->clear();
 }
+
 
 void SpectatorWindow::onQuit()
 {

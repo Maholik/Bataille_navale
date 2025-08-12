@@ -15,7 +15,7 @@ class SpectatorWindow : public QMainWindow
 {
     Q_OBJECT
 public:
-    explicit SpectatorWindow(const QString& roomId, QTcpSocket* socket, QWidget* parent=nullptr);
+    explicit SpectatorWindow(const QString& roomId, QTcpSocket* socket, const QString& spectatorName, QWidget* parent=nullptr);
     ~SpectatorWindow();
 
 signals:
@@ -45,6 +45,10 @@ private:
     void buildGrid(const QString& who, int rows, int cols, const QStringList& cells, bool onLeft);
     void updateCellFor(const QString& owner, int r, int c, const QString& symbol);
     QGridLayout* gridFor(const QString& who) const;
+
+    QString spectatorName;
+
+
 };
 
 #endif

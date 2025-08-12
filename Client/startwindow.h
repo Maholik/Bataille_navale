@@ -37,6 +37,9 @@ private:
     void updateRoomList(const QString &roomInfo);
     void showWaitingPopup();
     void showGameViewWidget(const QString &roomId); // Garde seulement cette version
+    // ... en bas de la classe StartWindow (section private:)
+    QString spectatorName;
+
 };
 
 #endif // STARTWINDOW_H
