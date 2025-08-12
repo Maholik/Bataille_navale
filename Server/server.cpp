@@ -9,6 +9,7 @@
 #include <QJsonArray>
 #include <QSet>
 #include <QRandomGenerator>
+#include <iostream>
 
 
 
@@ -485,36 +486,32 @@ void Server::onReadyRead()
         Game* gamemodel = roomGameMap.value(roomId, nullptr);
         if (!gamemodel) return;
 
-        // Joueur qui demande la reco = joueur courant
         QString attacker = QString::fromStdString(gamemodel->getCurrentPlayer()->getName());
 
-        // Vérif inventaire/score
         if (!canUseScanner(roomId, attacker)) {
             clientSocket->write("POWER_ERR;SCANNER_NOT_AVAILABLE_OR_NOT_ENOUGH_SCORE\n");
             return;
         }
-        // Déduction (inventaire ou score)
         consumeScannerOrPay(roomId, attacker);
 
-        // Calcul du résultat
         int nbBateauInZone = gamemodel->reconnaissanceZone(row, col);
+        qDebug() << "[SERVER] RECO result for" << attacker << "at" << row << col << "=>" << nbBateauInZone;
 
-        // Retourner le résultat au SEUL demandeur
         QString reply = "RECONNAISANCE_RESULT;" + QString::number(nbBateauInZone) + "\n";
         clientSocket->write(reply.toUtf8());
+        clientSocket->flush();
 
-        // Drop auto (tous les 4 tours) + fin de tour
         tryDropPowerEvery4Turns(roomId, attacker);
         gamemodel->changePlayer();
-
-        // Statut & IA éventuelle
         sendStatusInfoToClients(roomId);
+
         if (roomAiMap.contains(roomId)
             && QString::fromStdString(gamemodel->getCurrentPlayer()->getName()) == "AI"
             && !gamemodel->isGameOver()) {
             QTimer::singleShot(300, [this, roomId]() { playAiTurn(roomId); });
         }
     }
+
 
     else if (message.startsWith("START_SOLO;")) {
         QStringList parts = message.split(';');

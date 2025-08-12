@@ -123,21 +123,28 @@ void GameWindow::onReadyRead() {
             emit gameAborted();  // Émet un signal pour informer StartWindow
             this->close();       // Ferme la GameWindow
         }
+        // ... dans GameWindow::onReadyRead()
         else if (msg.startsWith("SEND_CHAT_MESSAGE;")) {
-            QStringList parts = message.split(";");
-            QString playerMessage = parts[1];        // Nom du joueur qui a envoyé le message
-            QString chatMessage = parts[2];   // Contenu du message
+            QStringList parts = msg.split(';', Qt::SkipEmptyParts);
+            if (parts.size() >= 3) {
+                QString playerMessage = parts[1];
+                QString chatMessage   = parts[2];
+                ui->messageIncomeBox->append(playerMessage + ": " + chatMessage);
+            }
+        }
 
-            // Afficher le message dans le QTextBrowser
-            QString formattedMessage = playerMessage + ": " + chatMessage;
-            ui->messageIncomeBox->append(formattedMessage);
+
+        else if (msg.startsWith("RECONNAISANCE_RESULT;")) {
+            QStringList parts = msg.split(';', Qt::SkipEmptyParts);
+            if (parts.size() >= 2) {
+                int nbBateaux = parts[1].toInt();
+                QString formattedMessage =
+                    "Resultat Reconnaisance : " + QString::number(nbBateaux) + " Bateaux sont presents dans la zone";
+                ui->messageIncomeBox->append(formattedMessage);
+            }
         }
-        else if(msg.startsWith("RECONNAISANCE_RESULT;")){
-            QStringList parts = message.split(";");
-            int nbBateaux = parts[1].toInt();
-            QString formattedMessage = "Resultat Reconnaisance : " + QString::number(nbBateaux) + " Bateaux sont presents dans la zone";
-            ui->messageIncomeBox->append(formattedMessage);
-        }
+
+
 
         else if (msg.startsWith("POWER_AVAILABLE;")) {
             auto parts = msg.split(';', Qt::SkipEmptyParts);
@@ -321,13 +328,14 @@ void GameWindow::onElementClicked(int row, int col, bool isOpponentBoard)
         }
     }
 
-    // --- Pouvoirs ---
     if (this->isReconnaisancePowerActive) {
-        QString message = "RECONNAISANCE;" + this->roomId + ";" + QString::number(row) + ";" + QString::number(col) + "\n";
+        QString message = "RECONNAISANCE;" + this->roomId + ";" +
+                          QString::number(row) + ";" + QString::number(col) + "\n";
         socket->write(message.toUtf8());
-        this->isReconnaisancePowerActive = false;  // désarmé côté client (le serveur gère coût/fin de tour)
+        this->isReconnaisancePowerActive = false;
         return;
     }
+
 
     if (this->isMissilePowerActive) {
         QString message = "MISSILE;" + this->roomId + ";" + QString::number(row) + ";" + QString::number(col) + "\n";

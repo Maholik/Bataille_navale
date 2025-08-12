@@ -2,6 +2,10 @@
 #include <iostream>
 #include <cstdlib>
 #include <ctime>
+#include <set>
+#include <algorithm>
+#include <QDebug>
+
 
 // Constructeur
 Game::Game()
@@ -114,29 +118,32 @@ void Game::displayBoards() const {
 }
 
 
-int Game::reconnaissanceZone(int row, int col) {
-    // Rayon de recherche autour de la case donnée
-    const int rayon = 2;
-    int count = 0;
 
-    // Obtenir le plateau du joueur opposé
+
+int Game::reconnaissanceZone(int row, int col) {
+    const int rayon = 2;
     Board* board = this->oppositePlayer->getBoard();
 
-    // Parcourir les cases dans le carré de côté (2 * rayon + 1)
+    std::set<Boat*> seen; // bateaux uniques trouvés
+
     for (int i = row - rayon; i <= row + rayon; ++i) {
         for (int j = col - rayon; j <= col + rayon; ++j) {
-            // Vérifier que les indices sont dans les limites du plateau
-            if (i >= 0 && i < board->getRows() && j >= 0 && j < board->getCols()) {
-                Case* currentCase = board->getCase(i, j);
+            if (i < 0 || i >= board->getRows() || j < 0 || j >= board->getCols()) continue;
 
-                // Vérifier si la case contient un bateau (status "Occupied")
-                if (currentCase->getStatus() == Case::Occupied) {
-                    count++;
+            Case* cell = board->getCase(i, j);
+
+            // Cherche si cette case appartient à un bateau (Occupied ou Hit)
+            for (Boat* b : board->getAllBoats()) {
+                const auto& s = b->getStructure();
+                if (std::find(s.begin(), s.end(), cell) != s.end()) {
+                    seen.insert(b);
+                    break; // pas besoin de continuer pour cette case
                 }
             }
         }
     }
-
-    return count;
+    qDebug() << "Reco (" << row << "," << col << ") =>" << static_cast<int>(seen.size());
+    return static_cast<int>(seen.size());
 }
+
 
