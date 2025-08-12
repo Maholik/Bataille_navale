@@ -2,6 +2,8 @@
 #include <iostream>
 #include <cstdlib>
 #include <ctime>
+#include <algorithm> // pour std::find
+#include <QSet>
 
 // Constructeur
 Game::Game()
@@ -115,28 +117,28 @@ void Game::displayBoards() const {
 
 
 int Game::reconnaissanceZone(int row, int col) {
-    // Rayon de recherche autour de la case donnée
     const int rayon = 2;
-    int count = 0;
-
-    // Obtenir le plateau du joueur opposé
     Board* board = this->oppositePlayer->getBoard();
+    QSet<Boat*> boatsFound;
 
-    // Parcourir les cases dans le carré de côté (2 * rayon + 1)
+    auto findBoatAtLocal = [&](int r, int c)->Boat* {
+        Case* cell = board->getCase(r,c);
+        for (Boat* b : board->getAllBoats()) {
+            const auto& s = b->getStructure();
+            if (std::find(s.begin(), s.end(), cell) != s.end()) return b;
+        }
+        return nullptr;
+    };
+
     for (int i = row - rayon; i <= row + rayon; ++i) {
         for (int j = col - rayon; j <= col + rayon; ++j) {
-            // Vérifier que les indices sont dans les limites du plateau
-            if (i >= 0 && i < board->getRows() && j >= 0 && j < board->getCols()) {
-                Case* currentCase = board->getCase(i, j);
+            if (i < 0 || i >= board->getRows() || j < 0 || j >= board->getCols()) continue;
 
-                // Vérifier si la case contient un bateau (status "Occupied")
-                if (currentCase->getStatus() == Case::Occupied) {
-                    count++;
-                }
+            Case* cell = board->getCase(i, j);
+            if (cell->getStatus() == Case::Occupied || cell->getStatus() == Case::Hit) {
+                if (Boat* b = findBoatAtLocal(i, j)) boatsFound.insert(b);
             }
         }
     }
-
-    return count;
+    return boatsFound.size();
 }
-

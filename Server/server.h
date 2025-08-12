@@ -89,6 +89,8 @@ private:
     // achat/usage scanner (reconnaissance)
     bool canUseScanner(const QString& roomId, const QString& attacker) const;
     void consumeScannerOrPay(const QString& roomId, const QString& attacker);
+    QMap<QString, QSet<Boat*>> roomAnnouncedSunk; // bateaux déjà annoncés "coulés" par room
+    void sendBoatSunkOnce(const QString& roomId, Player* owner, Boat* b);
 
 
 

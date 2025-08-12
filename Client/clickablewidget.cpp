@@ -30,24 +30,23 @@ Clickablewidget::Clickablewidget(QString _element,QWidget* parent, Qt::WindowFla
 void Clickablewidget::setCase(const QString& _element){
     this->caseElement = _element;
 
-    // Table de correspondance entre les chaînes et les couleurs
+    if (this->sunkHighlighted) {
+        // on garde l'or, ne pas changer la palette
+        return;
+    }
+
     static const QMap<QString, QColor> colorMap = {
-        {"H", Qt::black},              // Noir
-        {"M", Qt::darkBlue},           // Bleu foncé
-    };
-
+                                                   {"H", Qt::black},
+                                                   {"M", Qt::darkBlue},
+                                                   };
     QPalette pal = this->palette();
-
-    // Cherche la couleur dans la table, ou prend une couleur par défaut si non trouvée
-    QColor color = colorMap.value(caseElement, Qt::white);  // Blanc par défaut
-    //qDebug() << "MILIEU SET CASE : " << color;
+    QColor color = colorMap.value(caseElement, Qt::white);
     pal.setColor(QPalette::Window, color);
-
-    this->setAutoFillBackground(true);  // Indique à Qt de remplir l'arrière-plan
+    this->setAutoFillBackground(true);
     this->setPalette(pal);
-
     this->setMinimumSize(20,20);
 }
+
 
 QString Clickablewidget::getCase(){
     return this->caseElement;
@@ -61,7 +60,8 @@ void Clickablewidget::mousePressEvent(QMouseEvent* event) {
 
 void Clickablewidget::setSunkHighlight() {
     QPalette pal = this->palette();
-    pal.setColor(QPalette::Window, QColor("gold")); // Or
+    pal.setColor(QPalette::Window, QColor("gold"));
     this->setAutoFillBackground(true);
     this->setPalette(pal);
+    this->sunkHighlighted = true;   // <- important
 }

@@ -12,6 +12,8 @@ class Clickablewidget : public QWidget
 
 private:
     QString caseElement;
+    bool sunkHighlighted = false;  // <- new
+
 
 public:
     explicit Clickablewidget(QString _element, QWidget* parent = Q_NULLPTR, Qt::WindowFlags f = Qt::WindowFlags());
@@ -19,6 +21,9 @@ public:
     QString getCase();
     ~Clickablewidget();
     void setSunkHighlight(); // <- AJOUT
+    bool isSunkHighlighted() const { return sunkHighlighted; }
+
+
 
 
 signals:
