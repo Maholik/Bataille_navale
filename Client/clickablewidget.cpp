@@ -30,24 +30,26 @@ Clickablewidget::Clickablewidget(QString _element,QWidget* parent, Qt::WindowFla
 void Clickablewidget::setCase(const QString& _element){
     this->caseElement = _element;
 
-    // Table de correspondance entre les chaînes et les couleurs
     static const QMap<QString, QColor> colorMap = {
-        {"H", Qt::black},              // Noir
-        {"M", Qt::darkBlue},           // Bleu foncé
+        {"E", QColor(30, 144, 255)},   // Eau
+        {"H", Qt::black},
+        {"M", Qt::darkBlue},
+        {"D", QColor(95, 158, 160)},   // Destroyer (2)
+        {"S", QColor(255, 165, 0)},    // Sous-marin (3)
+        {"C", QColor(218, 112, 214)},  // Croiseur (4)
+        {"P", QColor(255, 0, 0)},      // Porte-avions (5)
+        {"X", Qt::darkGray}
     };
 
     QPalette pal = this->palette();
-
-    // Cherche la couleur dans la table, ou prend une couleur par défaut si non trouvée
-    QColor color = colorMap.value(caseElement, Qt::white);  // Blanc par défaut
-    //qDebug() << "MILIEU SET CASE : " << color;
+    QColor color = colorMap.value(caseElement, Qt::white);
     pal.setColor(QPalette::Window, color);
 
-    this->setAutoFillBackground(true);  // Indique à Qt de remplir l'arrière-plan
+    this->setAutoFillBackground(true);
     this->setPalette(pal);
-
     this->setMinimumSize(20,20);
 }
+
 
 QString Clickablewidget::getCase(){
     return this->caseElement;

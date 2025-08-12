@@ -13,6 +13,30 @@ GameWindow::GameWindow(const QString &_roomId, QTcpSocket *_socket, const QStrin
 {
     ui->setupUi(this);
 
+    // --- UI Placement ---
+    rotateButton = new QPushButton("Orientation: Horizontale", this);
+    finishPlacementButton = new QPushButton("Terminer placement", this);
+    rotateButton->setVisible(false);
+    finishPlacementButton->setVisible(false);
+
+    // On les ajoute dans la colonne de droite (verticalLayout_3)
+    ui->verticalLayout_3->addWidget(rotateButton);
+    ui->verticalLayout_3->addWidget(finishPlacementButton);
+
+    connect(rotateButton, &QPushButton::clicked, this, [this](){
+        placementHorizontal = !placementHorizontal;
+        rotateButton->setText(QString("Orientation: %1").arg(placementHorizontal ? "Horizontale" : "Verticale"));
+    });
+    connect(finishPlacementButton, &QPushButton::clicked, this, [this](){
+        if (!boatsRemaining.isEmpty()) {
+            ui->messageIncomeBox->append("Il reste des bateaux à placer !");
+                return;
+        }
+        socket->write(QString("PLACE_DONE;%1\n").arg(roomId).toUtf8());
+        socket->flush();
+    });
+
+
     this->isWinner= false;
     this->isReconnaisancePowerActive = false;
     ui->namePlayer->setText(_playerName);
@@ -110,6 +134,68 @@ void GameWindow::onReadyRead() {
             this->winnerPlayer = parts[3];
             statusModification(currentPlayer, this->isWinner, this->winnerPlayer);
         }
+        // --- Début phase placement ---
+        else if (msg.startsWith("START_PLACEMENT;")) {
+            // START_PLACEMENT;rows;cols;BOATS;5,4,3,3,2
+            QStringList p = msg.split(';', Qt::SkipEmptyParts);
+            if (p.size() >= 5) {
+                int rows = p[1].toInt();
+                int cols = p[2].toInt();
+                boatsRemaining.clear();
+                for (const QString &s : p[4].split(',', Qt::SkipEmptyParts))
+                    boatsRemaining.push_back(s.toInt());
+
+                isPlacementPhase = true;
+                currentPlacementSize = -1;
+                placementHorizontal = true;
+                rotateButton->setText("Orientation: Horizontale");
+                rotateButton->setVisible(true);
+                finishPlacementButton->setVisible(true);
+
+                ui->messageIncomeBox->append("Phase de placement : cliquez sur votre grille pour poser les bateaux.");
+                setupEmptyBoards(rows, cols);
+            }
+        }
+        // --- Accusé position OK ---
+        else if (msg.startsWith("PLACE_OK;")) {
+            // PLACE_OK;size;row;col;H|V
+            QStringList p = msg.split(';', Qt::SkipEmptyParts);
+            if (p.size() >= 5) {
+                int size = p[1].toInt();
+                int row  = p[2].toInt();
+                int col  = p[3].toInt();
+                bool horiz = (p[4] == "H");
+
+                applyPlacementLocally(size, row, col, horiz);
+
+                int idx = boatsRemaining.indexOf(size);
+                if (idx != -1) boatsRemaining.removeAt(idx);
+                currentPlacementSize = -1;
+
+                ui->messageIncomeBox->append(
+                    QString("Bateau de taille %1 placé. Restants: %2")
+                    .arg(size).arg(boatsRemaining.size())
+                );
+
+                if (boatsRemaining.isEmpty()) {
+                    socket->write(QString("PLACE_DONE;%1\n").arg(roomId).toUtf8());
+                    socket->flush();
+                }
+            }
+        }
+        // --- Erreur placement ---
+        else if (msg.startsWith("PLACE_ERR;")) {
+            QString reason = msg.section(';', 1);
+            ui->messageIncomeBox->append("Erreur placement: " + reason);
+        }
+        // --- Début de partie (fin placement) ---
+        else if (msg.startsWith("ROOM_READY;")) {
+            isPlacementPhase = false;
+            rotateButton->setVisible(false);
+            finishPlacementButton->setVisible(false);
+            // Le flux normal continue : BOARD_CREATE + STATUS (déjà gérés plus bas)
+        }
+
         else if(msg.startsWith("UPDATE_CASE")){
             QStringList parts = msg.split(";");
             QString oppositePlayer = parts[1];
@@ -233,6 +319,9 @@ void GameWindow::onQuitRoom() {
 
 void GameWindow::updateBoard(const QString& oppositePlayer, int row, int col, QString _case)
 {
+
+
+
     if (oppositePlayer != this->playerName) {
         // plateau adverse
         Clickablewidget *w = new Clickablewidget(_case, this);
@@ -298,6 +387,12 @@ void GameWindow::statusModification(const QString& currentPlayer, bool isGameOve
 void GameWindow::onElementClicked(int row, int col, bool isOpponentBoard)
 {
     qDebug("Clicked");
+
+    if (isPlacementPhase) {
+        ui->messageIncomeBox->append("Vous êtes encore en phase de placement.");
+            return;
+    }
+
 
     // Vérifier qu'on peut jouer
     if (this->playerName != ui->currentPlayerLabel->text()) {
@@ -390,5 +485,82 @@ void GameWindow::on_powerMissile_clicked()
     this->isMissilePowerActive = true;
     ui->messageIncomeBox->append("Missile sélectionné : cliquez une case cible (centre du 3x3).");
 }
+
+QString GameWindow::letterForSize(int size) const {
+    switch (size) {
+    case 2: return "D";
+    case 3: return "S";
+    case 4: return "C";
+    case 5: return "P";
+    default: return "E";
+    }
+}
+
+void GameWindow::setupEmptyBoards(int rows, int cols) {
+    // Nettoyer anciens widgets
+    auto clearGrid = [](QGridLayout* grid){
+        while (QLayoutItem* item = grid->takeAt(0)) {
+            if (auto w = item->widget()) w->deleteLater();
+            delete item;
+        }
+    };
+    clearGrid(ui->gridCurrentBoard);
+    clearGrid(ui->gridOppositeBoard);
+
+    myBoard.assign(rows, std::vector<Clickablewidget*>(cols, nullptr));
+    opponentBoard.assign(rows, std::vector<Clickablewidget*>(cols, nullptr));
+
+    for (int r=0; r<rows; ++r) {
+        for (int c=0; c<cols; ++c) {
+            // Mon board (cliquable en placement)
+            auto* wMine = new Clickablewidget("E", this);
+            connect(wMine, &Clickablewidget::clicked, this, [this,r,c](){
+                if (isPlacementPhase) tryPlaceAt(r,c);
+            });
+            ui->gridCurrentBoard->addWidget(wMine, r, c);
+            myBoard[r][c] = wMine;
+
+            // Board adverse placeholder
+            auto* wOpp = new Clickablewidget("X", this);
+            ui->gridOppositeBoard->addWidget(wOpp, r, c);
+            opponentBoard[r][c] = wOpp;
+        }
+    }
+}
+
+void GameWindow::applyPlacementLocally(int size, int row, int col, bool horizontal) {
+    QString letter = letterForSize(size);
+    int rows = (int)myBoard.size();
+    int cols = rows ? (int)myBoard[0].size() : 0;
+
+    for (int i=0;i<size;++i) {
+        int rr = row + (horizontal ? 0 : i);
+        int cc = col + (horizontal ? i : 0);
+        if (rr>=0 && rr<rows && cc>=0 && cc<cols && myBoard[rr][cc]) {
+            myBoard[rr][cc]->setCase(letter);
+        }
+    }
+}
+
+void GameWindow::tryPlaceAt(int row, int col) {
+    if (!isPlacementPhase) return;
+    if (boatsRemaining.isEmpty()) {
+        ui->messageIncomeBox->append("Tous les bateaux sont déjà placés.");
+        return;
+    }
+    if (currentPlacementSize <= 0) {
+        currentPlacementSize = boatsRemaining.front(); // taille suivante
+    }
+
+    QString msg = QString("PLACE_BOAT;%1;%2;%3;%4;%5\n")
+                      .arg(roomId)
+                      .arg(currentPlacementSize)
+                      .arg(row)
+                      .arg(col)
+                      .arg(placementHorizontal ? "H" : "V");
+    socket->write(msg.toUtf8());
+    socket->flush();
+}
+
 
 
