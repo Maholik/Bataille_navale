@@ -11,6 +11,8 @@
 #include <QLabel>
 #include <QInputDialog>
 #include "spectatorwindow.h"
+#include "placementwindow.h"
+
 
 
 StartWindow::StartWindow(QWidget *parent) :
@@ -202,8 +204,21 @@ void StartWindow::onReadyRead()
         else if (message.startsWith("ROOM_READY;")) {
             QString roomId = message.split(';', Qt::SkipEmptyParts).value(1);
             if (waitingMessageBox) waitingMessageBox->close();
-            showGameViewWidget(roomId);
+
+            // Ouvre la fenêtre de placement (pas GameWindow tout de suite)
+            disconnect(socket, &QTcpSocket::readyRead, this, &StartWindow::onReadyRead);
+
+            PlacementWindow* pw = new PlacementWindow(roomId, this->playerName, socket, this);
+            connect(pw, &PlacementWindow::placementFinished, this, [this, roomId]() {
+                // après PLACEMENT_OVER -> ouvrir la GameWindow
+                // Reconnecte la lecture dans StartWindow pour capter le reste si besoin
+                connect(socket, &QTcpSocket::readyRead, this, &StartWindow::onReadyRead);
+                showGameViewWidget(roomId); // ça ouvre GameWindow qui enverra CREATE_GAME
+            });
+            pw->show();
+            this->hide();
         }
+
         else if (message.startsWith("ERR_NAME_TAKEN")) {
             QMessageBox::warning(this, "Nom déjà pris", "Ce nom est déjà utilisé dans cette salle.");
         }
