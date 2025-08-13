@@ -2,6 +2,8 @@
 #include "ui_gamewindow.h"
 #include "QMessageBox"
 #include <QRegularExpression> // add this at the top
+#include <QTime>
+
 
 
 GameWindow::GameWindow(const QString &_roomId, QTcpSocket *_socket, const QString& _playerName,QWidget *parent) :
@@ -124,12 +126,24 @@ void GameWindow::onReadyRead() {
             this->close();       // Ferme la GameWindow
         }
         // ... dans GameWindow::onReadyRead()
-        else if (msg.startsWith("SEND_CHAT_MESSAGE;")) {
-            QStringList parts = msg.split(';', Qt::SkipEmptyParts);
+        else if (message.startsWith("SEND_CHAT_MESSAGE;")) {
+            const QStringList parts = message.split(';', Qt::SkipEmptyParts);
             if (parts.size() >= 3) {
-                QString playerMessage = parts[1];
-                QString chatMessage   = parts[2];
-                ui->messageIncomeBox->append(playerMessage + ": " + chatMessage);
+                const QString from = parts[1];
+                const QString content = parts.mid(2).join(";"); // au cas où le texte contient ';'
+                const QString hhmm = QTime::currentTime().toString("HH:mm");
+
+                if (from == "SYSTEM") {
+                    ui->messageIncomeBox->append(
+                        QString("<span style='color:#888'>[%1]</span> "
+                                "<span style='color:#0EA5E9'><i>%2</i></span>")
+                            .arg(hhmm, content.toHtmlEscaped()));
+                } else {
+                    ui->messageIncomeBox->append(
+                        QString("<span style='color:#888'>[%1]</span> "
+                                "<b>%2</b>: %3")
+                            .arg(hhmm, from.toHtmlEscaped(), content.toHtmlEscaped()));
+                }
             }
         }
 
@@ -364,7 +378,11 @@ void GameWindow::onSendMessage(){
     socket->flush();
 
     // Afficher le message localement dans le QTextBrowser
-    ui->messageIncomeBox->append(formattedMessage);
+    const QString hhmm = QTime::currentTime().toString("HH:mm");
+    ui->messageIncomeBox->append(
+        QString("<span style='color:#888'>[%1]</span> <b>%2</b>: %3")
+            .arg(hhmm, playerName.toHtmlEscaped(), message.toHtmlEscaped()));
+
 
     // Vider le QTextEdit après l'envoi
     ui->boxText->clear();

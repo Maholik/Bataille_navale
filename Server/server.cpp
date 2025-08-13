@@ -183,6 +183,8 @@ void Server::sendUpdateCaseToClients(QString& _roomId, int row, int col){
     if (!roomId) return;
 
     Game* gamemodel = this->roomGameMap[_roomId];
+    const QString attacker = QString::fromStdString(gamemodel->getCurrentPlayer()->getName());
+    const QString defender = QString::fromStdString(gamemodel->getOppositePlayer()->getName());
 
     auto sendToParticipants = [&](const QString& text) {
         for (QTcpSocket* c : roomId->clients)     c->write(text.toUtf8());
@@ -217,6 +219,15 @@ void Server::sendUpdateCaseToClients(QString& _roomId, int row, int col){
             sunkMsg += QString::number(cell->getRow()) + ";" + QString::number(cell->getCol()) + ";";
         sunkMsg += "\n";
         sendToParticipants(sunkMsg);
+        if (hitBoat && hitBoat->isSunk()) {
+            broadcastSystemMessage(_roomId, QString("💥 %1 a détruit un bateau de taille %2 chez %3 (impact %4,%5)")
+                                                .arg(attacker)
+                                                .arg(hitBoat->getSize())
+                                                .arg(defender)
+                                                .arg(row).arg(col));
+        }
+
+
     }
 
     // --- scoring/drop + swap comme avant ---
@@ -229,6 +240,19 @@ void Server::sendUpdateCaseToClients(QString& _roomId, int row, int col){
         addScoreForHitAndSunk(_roomId, attacker, hit, sunk);
         tryDropPowerEvery4Turns(_roomId, attacker);
     }
+    Game* gm = roomGameMap[_roomId];
+    Case* cell = gm->getOppositePlayer()->getBoard()->getCase(row, col);
+
+    if (cell->getStatus() == Case::Hit) {
+        broadcastSystemMessage(_roomId, QString("🔥 %1 a touché %2 en (%3,%4)")
+                                            .arg(attacker, defender)
+                                            .arg(row).arg(col));
+    } else if (cell->getStatus() == Case::Miss) {
+        broadcastSystemMessage(_roomId, QString("✖ %1 a manqué %2 en (%3,%4)")
+                                            .arg(attacker, defender)
+                                            .arg(row).arg(col));
+    }
+
     gamemodel->changePlayer();
 }
 
@@ -248,6 +272,17 @@ void Server::sendStatusInfoToClients(QString& _roomId){
     for (QTcpSocket *_spec   : qAsConst(roomId->spectators)) _spec->write(roomInfo.toUtf8());
 
     qDebug() << "Status envoyée (participants) : " << roomInfo;
+    Game* gm = roomGameMap[_roomId];
+    Room* r  = findRoomById(_roomId);
+    if (gm && r && gm->isGameOver() && !r->endAnnounced) {
+        const QString winner = QString::fromStdString(gm->getWinner());
+        const QString p1 = QString::fromStdString(gm->getPlayer1()->getName());
+        const QString p2 = QString::fromStdString(gm->getPlayer2()->getName());
+        const QString loser = (winner == p1 ? p2 : p1);
+        broadcastSystemMessage(_roomId, QString("🏁 %1 gagne la partie — %2 perd.").arg(winner, loser));
+        r->endAnnounced = true;
+    }
+
 }
 
 
@@ -354,6 +389,14 @@ void Server::onReadyRead()
         QStringList parts = message.split(";");
         QString roomId = parts[1];
         sendBoardsUpdateToClients(roomId);
+        Room* r = findRoomById(roomId);
+        Game* g  = roomGameMap.value(roomId, nullptr);
+        if (r && g && !r->startAnnounced) {
+            const QString p1 = QString::fromStdString(g->getPlayer1()->getName());
+            const QString p2 = QString::fromStdString(g->getPlayer2()->getName());
+            broadcastSystemMessage(roomId, QString("🎮 Début de partie : %1 vs %2").arg(p1, p2));
+            r->startAnnounced = true;
+        }
         sendStatusInfoToClients(roomId);
     }
     else if (message.startsWith("ATTACK")) {
@@ -402,6 +445,9 @@ void Server::onReadyRead()
             return;
         }
         consumeMissileOrPay(roomId, attacker);
+        broadcastSystemMessage(roomId, QString("🚀 %1 a utilisé MISSILE au centre (%2,%3)")
+                                           .arg(attacker).arg(row).arg(col));
+
 
         Board* targetBoard = gamemodel->getOppositePlayer()->getBoard();
 
@@ -505,6 +551,9 @@ void Server::onReadyRead()
             return;
         }
         consumeScannerOrPay(roomId, attacker);
+        broadcastSystemMessage(roomId, QString("🛰️ %1 a utilisé SCANNER en (%2,%3)")
+                                           .arg(attacker).arg(row).arg(col));
+
 
         int nbBateauInZone = gamemodel->reconnaissanceZone(row, col);
         qDebug() << "[SERVER] RECO result for" << attacker << "at" << row << col << "=>" << nbBateauInZone;
@@ -552,6 +601,7 @@ void Server::onReadyRead()
 
         // Envoyer tout de suite l'état courant
         sendBoardsUpdateToClients(roomId);  // va être étendu pour cibler aussi spectators
+        broadcastSystemMessage(roomId, QString("👀 %1 a rejoint en spectateur").arg(nickname));
         sendStatusInfoToClients(roomId);
     }
 
@@ -667,6 +717,13 @@ void Server::onDisconnected()
         if (wasSpectator && room->spectatorCount > 0)
             room->spectatorCount--;
 
+        if (wasSpectator) {
+            const int id = clientIdMap.value(clientSocket, -1);
+            const QString pseudo = clientToNameMap.value(id, "Un spectateur");
+            if (!rid.isEmpty()) broadcastSystemMessage(rid, QString("👋 %1 a quitté la room").arg(pseudo));
+        }
+
+
         // Ne pas toucher clientCount si c'était un spectateur
         // Met à jour la liste des rooms pour tous
         sendRoomInfoToClients();  // affiche les rooms avec clientCount à jour
@@ -705,6 +762,17 @@ void Server::broadcastMessageToRoom(const QString& roomId, const QString& chatMe
         }
     }
 }
+
+void Server::broadcastSystemMessage(const QString& roomId, const QString& text)
+{
+    Room* room = findRoomById(roomId);
+    if (!room) return;
+
+    const QString formatted = QString("SEND_CHAT_MESSAGE;SYSTEM;%1").arg(text);
+    for (QTcpSocket* c : room->clients)    { c->write(formatted.toUtf8()); c->flush(); }
+    for (QTcpSocket* s : room->spectators) { s->write(formatted.toUtf8()); s->flush(); }
+}
+
 
 QList<QTcpSocket*> Server::clientsInRoom(const QString &_roomId) {
     Room* roomId = findRoomById(_roomId);
@@ -748,6 +816,14 @@ void Server::createSoloGame(QTcpSocket* humanSocket, const QString& playerName)
 
     // envoyer les boards + status
     sendBoardsUpdateToClients(roomId);
+    Room* r = findRoomById(roomId);
+    Game* g  = roomGameMap.value(roomId, nullptr);
+    if (r && g && !r->startAnnounced) {
+        const QString p1 = QString::fromStdString(g->getPlayer1()->getName());
+        const QString p2 = QString::fromStdString(g->getPlayer2()->getName());
+        broadcastSystemMessage(roomId, QString("🎮 Début de partie : %1 vs %2").arg(p1, "IA"));
+        r->startAnnounced = true;
+    }
     sendStatusInfoToClients(roomId);
 
     // si c'est à l'IA de jouer en premier, jouer tout de suite
@@ -839,6 +915,21 @@ void Server::sendUpdateCaseNoTurnSwap(QString& _roomId, int row, int col)
         roomInfo += _caseString + ";\n";
         sendToParticipants(roomInfo);
     }
+    {
+        Game* gm = roomGameMap[_roomId];
+        const QString attacker = QString::fromStdString(gm->getCurrentPlayer()->getName());
+        const QString defender = QString::fromStdString(gm->getOppositePlayer()->getName());
+        Case* cell = gm->getOppositePlayer()->getBoard()->getCase(row, col);
+        if (cell->getStatus() == Case::Hit) {
+            broadcastSystemMessage(_roomId, QString("🔥 %1 a touché %2 en (%3,%4)")
+                                                .arg(attacker, defender)
+                                                .arg(row).arg(col));
+        } else if (cell->getStatus() == Case::Miss) {
+            broadcastSystemMessage(_roomId, QString("✖ %1 a manqué %2 en (%3,%4)")
+                                                .arg(attacker, defender)
+                                                .arg(row).arg(col));
+        }
+    }
 
     // Détection "coulé" → BOAT_SUNK (sans swap)
     Board* oppBoard = gamemodel->getOppositePlayer()->getBoard();
@@ -852,6 +943,17 @@ void Server::sendUpdateCaseNoTurnSwap(QString& _roomId, int row, int col)
             sunkMsg += QString::number(cell->getRow()) + ";" + QString::number(cell->getCol()) + ";";
         sunkMsg += "\n";
         sendToParticipants(sunkMsg);
+    }
+    // ... et après l'envoi de BOAT_SUNK;
+    if (hitBoat && hitBoat->isSunk()) {
+        Game* gm = roomGameMap[_roomId];
+        const QString attacker = QString::fromStdString(gm->getCurrentPlayer()->getName());
+        const QString defender = QString::fromStdString(gm->getOppositePlayer()->getName());
+        broadcastSystemMessage(_roomId, QString("💥 %1 a détruit un bateau de taille %2 chez %3 (impact %4,%5)")
+                                            .arg(attacker)
+                                            .arg(hitBoat->getSize())
+                                            .arg(defender)
+                                            .arg(row).arg(col));
     }
 }
 

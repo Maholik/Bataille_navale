@@ -23,6 +23,8 @@ public:
     void sendStatusInfoToClients(QString& roomId);
     void sendErrorMessageToClients(QString& roomId, QString&);
     void broadcastMessageToRoom(const QString& roomId, const QString& message);
+    void broadcastSystemMessage(const QString& roomId, const QString& text);
+
     void sendUpdateCaseToClients(QString& _roomId, int row, int col);
     QList<QTcpSocket*> clientsInRoom(const QString &roomId);
     void onRoomDisconnected(const QString&);
@@ -43,6 +45,10 @@ private:
         QList<QTcpSocket*> clients;
         int spectatorCount = 0;
         QList<QTcpSocket*> spectators;
+
+        // NEW : pour éviter doublons d'annonces
+        bool startAnnounced = false;
+        bool endAnnounced   = false;
     };
 
     // --- ÉTAT PAR JOUEUR (score, drops, inventaire) ---
@@ -93,6 +99,7 @@ private:
     void consumeScannerOrPay(const QString& roomId, const QString& attacker);
 
     bool checkSpectatorAccess(const QString& id_room, const QString& password);
+
 
 
 

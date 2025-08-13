@@ -5,7 +5,7 @@
 #include <QAction>
 #include <QRegularExpression>
 #include <QMessageBox>
-
+#include <QTime>
 SpectatorWindow::SpectatorWindow(const QString& _roomId, QTcpSocket* _socket, const QString& _spectatorName, QWidget* parent)
     : QMainWindow(parent), roomId(_roomId), socket(_socket), spectatorName(_spectatorName)
 {
@@ -201,9 +201,25 @@ void SpectatorWindow::onReadyRead()
         else if (msg.startsWith("SEND_CHAT_MESSAGE;")) {
             QStringList parts = msg.split(';', Qt::SkipEmptyParts);
             if (parts.size() >= 3) {
-                chatView->append(parts[1] + ": " + parts[2]);
+                const QString from    = parts[1];
+                const QString content = parts.mid(2).join(";"); // si le message contient des ';'
+                const QString hhmm    = QTime::currentTime().toString("HH:mm");
+
+                if (from == "SYSTEM") {
+                    chatView->append(
+                        QString("<span style='color:#888'>[%1]</span> "
+                                "<span style='color:#0EA5E9'><i>%2</i></span>")
+                            .arg(hhmm, content.toHtmlEscaped()));
+                } else {
+                    chatView->append(
+                        QString("<span style='color:#888'>[%1]</span> "
+                                "<b>%2</b>: %3")
+                            .arg(hhmm, from.toHtmlEscaped(), content.toHtmlEscaped()));
+                }
             }
         }
+
+
 
         else if (msg.startsWith("CLIENT_LEFT_ROOM;")) {
             QMessageBox::information(this, "Room fermée", "Un joueur a quitté la salle.");
@@ -221,11 +237,15 @@ void SpectatorWindow::onSendMessage()
     socket->write(QString("CHAT_MESSAGE;%1;%2\n").arg(roomId, text).toUtf8());
     socket->flush();
 
-    // NEW: affichage local, car le serveur n'écho pas au sender
-    chatView->append(spectatorName + ": " + text);
+    // Écho local : on utilise spectatorName et chatView (pas de ui->)
+    const QString hhmm = QTime::currentTime().toString("HH:mm");
+    chatView->append(
+        QString("<span style='color:#888'>[%1]</span> <b>%2</b>: %3")
+            .arg(hhmm, spectatorName.toHtmlEscaped(), text.toHtmlEscaped()));
 
     chatEdit->clear();
 }
+
 
 
 void SpectatorWindow::onQuit()
