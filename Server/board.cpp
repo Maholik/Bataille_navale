@@ -1,5 +1,6 @@
 #include "Board.h"
 #include <iostream>
+#include <algorithm>
 
 // Constructeur
 Board::Board(int rows, int cols) : m_rows(rows), m_cols(cols) {
@@ -75,14 +76,9 @@ bool Board::attack(int row, int col) {
 
 // Vérifie si tous les bateaux sont coulés
 bool Board::allBoatsSunk() const {
-    for (const Boat* boat : m_boats) {
-        if (!boat->isSunk()) {
-            return false; // Au moins un bateau n'est pas encore coulé
-        }
-    }
-    return true; // Tous les bateaux sont coulés
+    return std::all_of(m_boats.begin(), m_boats.end(),
+                       [](const Boat* b){ return b && b->isSunk(); });
 }
-
 // Vérifie si une position est valide
 bool Board::isValidPosition(int row, int col) const {
     return row >= 0 && row < m_rows && col >= 0 && col < m_cols;

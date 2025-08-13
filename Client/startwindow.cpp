@@ -34,11 +34,11 @@ StartWindow::StartWindow(QWidget *parent) :
     waitingMessageBox->setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint | Qt::WindowTitleHint);
 
     // Connecter le bouton "Annuler" pour quitter la salle
-    connect(waitingMessageBox, &QMessageBox::buttonClicked, this, [this](QAbstractButton *button) {
+    connect(waitingMessageBox, &QMessageBox::buttonClicked, this, [this](const QAbstractButton *button) {
         if (waitingMessageBox->button(QMessageBox::Cancel) == button) {
             socket->write(QString("QUIT_ROOM;%1").arg(roomId).toUtf8());
             socket->flush();
-            waitingMessageBox->close();  // Ferme le pop-up
+            waitingMessageBox->close();
         }
     });
 
@@ -163,12 +163,12 @@ void StartWindow::on_btnJoin_clicked()
 
     // Affichage de la boîte de dialogue et récupération des données
     if (dialog.exec() == QDialog::Accepted) {
-        QString roomId = lineEditRoomId->text();
+        QString rid = lineEditRoomId->text();
         QString password = lineEditPassword->text();
         QString _playerName = lineEditPlayerName->text();
         this->playerName = _playerName;
 
-        if (roomId.isEmpty()) {
+        if (rid.isEmpty()) {
             QMessageBox::warning(this, "Erreur", "L'identifiant de la salle est requis.");
             return;
         }
@@ -177,7 +177,7 @@ void StartWindow::on_btnJoin_clicked()
         }
 
         // Envoi de la requête au serveur
-        QString request = QString("JOIN_ROOM;%1;%2;%3").arg(_playerName,roomId, password);
+        QString request = QString("JOIN_ROOM;%1;%2;%3").arg(_playerName,rid, password);
         socket->write(request.toUtf8());
         qDebug() << "Requête envoyée au serveur : " << request;
     }
@@ -200,9 +200,9 @@ void StartWindow::onReadyRead()
             showWaitingPopup();
         }
         else if (message.startsWith("ROOM_READY;")) {
-            QString roomId = message.split(';', Qt::SkipEmptyParts).value(1);
+            QString rid = message.split(';', Qt::SkipEmptyParts).value(1);
             if (waitingMessageBox) waitingMessageBox->close();
-            showGameViewWidget(roomId);
+            showGameViewWidget(rid);
         }
         else if (message.startsWith("ERR_NAME_TAKEN")) {
             QMessageBox::warning(this, "Nom déjà pris", "Ce nom est déjà utilisé dans cette salle.");
@@ -212,11 +212,9 @@ void StartWindow::onReadyRead()
         }
 
         else if (message.startsWith("SPECTATE_OK;")) {
-            QString roomId = message.split(';', Qt::SkipEmptyParts).value(1);
-            // ouvrir la fenêtre spectateur
+            QString rid = message.split(';', Qt::SkipEmptyParts).value(1);
             disconnect(socket, &QTcpSocket::readyRead, this, &StartWindow::onReadyRead);
-            // NEW: on passe spectatorName
-            SpectatorWindow* w = new SpectatorWindow(roomId, socket, this->spectatorName, this);
+            SpectatorWindow* w = new SpectatorWindow(rid, socket, this->spectatorName, this);
             connect(w, &SpectatorWindow::spectateAborted, this, [this](){
                 this->show();
                 connect(socket, &QTcpSocket::readyRead, this, &StartWindow::onReadyRead);
@@ -282,7 +280,7 @@ void StartWindow::updateRoomList(const QString &roomInfo)
         // Vérifier que nous avons les 4 éléments nécessaires pour remplir la table
         if (roomFields.size() == 4) {
 
-            QString roomId = roomFields[0].trimmed();         // ID de la salle
+            QString rid = roomFields[0].trimmed();         // ID de la salle
             QString roomName = roomFields[1].trimmed();       // Nom de la salle
             QString roomType = roomFields[2].trimmed();       // Type de la salle (privée/publique)
             QString clientCount = roomFields[3].trimmed();    // Nombre de clients dans la salle
@@ -292,7 +290,7 @@ void StartWindow::updateRoomList(const QString &roomInfo)
             ui->tableRooms->insertRow(row);
 
             // Remplir la table avec les données de la salle
-            ui->tableRooms->setItem(row, 0, new QTableWidgetItem(roomId));       // ID de la salle
+            ui->tableRooms->setItem(row, 0, new QTableWidgetItem(rid));       // ID de la salle
             ui->tableRooms->setItem(row, 1, new QTableWidgetItem(roomName));     // Nom de la salle
             ui->tableRooms->setItem(row, 2, new QTableWidgetItem(roomType));     // Type de la salle (privée/publique)
             ui->tableRooms->setItem(row, 3, new QTableWidgetItem(clientCount));  // Nombre de clients dans la salle

@@ -21,7 +21,7 @@ public:
     void sendRoomInfoToClients();
     void sendBoardsUpdateToClients(const QString& roomId);
     void sendStatusInfoToClients(const QString& roomId);
-    void sendErrorMessageToClients(QString& roomId, QString&);
+    void sendErrorMessageToClients(const QString& roomId, const QString& errorMessage);
     void broadcastMessageToRoom(const QString& roomId, const QString& message);
     void broadcastSystemMessage(const QString& roomId, const QString& text);
 

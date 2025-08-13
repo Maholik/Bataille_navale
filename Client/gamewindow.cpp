@@ -6,6 +6,14 @@
 
 #include <QRegularExpression>
 
+static inline bool inBounds(const std::vector<std::vector<Clickablewidget*>>& grid, int r, int c) {
+    return r >= 0
+           && r < static_cast<int>(grid.size())
+           && c >= 0
+           && c < static_cast<int>(grid[r].size());
+}
+
+
 static QStringList splitMessages(const QString& chunk) {
     // Sécurise en injectant des \n avant chaque tag connu
     QString s = chunk;
@@ -224,11 +232,12 @@ void GameWindow::onReadyRead() {
                 // Si le bateau appartient à l'adversaire, on colore sur opponentBoard,
                 // sinon sur mon board.
                 if (ownerName != this->playerName) {
-                    if (r < opponentBoard.size() && c < opponentBoard[r].size() && opponentBoard[r][c]) {
+                    if (inBounds(opponentBoard, r, c) && opponentBoard[r][c]) {
+
                         opponentBoard[r][c]->setSunkHighlight();
                     }
                 } else {
-                    if (r < myBoard.size() && c < myBoard[r].size() && myBoard[r][c]) {
+                    if (inBounds(myBoard, r, c) && myBoard[r][c]) {
                         myBoard[r][c]->setSunkHighlight();
                     }
                 }
@@ -303,16 +312,16 @@ void GameWindow::statusModification(const QString& currentPlayer, bool isGameOve
         ui->powerMissile->setEnabled(isMyTurn);
         if(isMyTurn){
             ui->opponentLabel->setStyleSheet("background-color: gold;");
-            for (int row = 0; row < this->opponentBoard.size(); ++row) {
-                for (int col = 0; col < this->opponentBoard[row].size(); ++col) {
+            for (int row = 0; row < static_cast<int>(this->opponentBoard.size()); ++row) {
+                for (int col = 0; col < static_cast<int>(this->opponentBoard[row].size()); ++col) {
                     this->opponentBoard[row][col]->blockSignals(false);
                 }
             }
         }
         else{
             ui->opponentLabel->setStyleSheet("background-color: none;");
-            for (int row = 0; row < this->opponentBoard.size(); ++row) {
-                for (int col = 0; col < this->opponentBoard[row].size(); ++col) {
+            for (int row = 0; row < static_cast<int>(this->opponentBoard.size()); ++row) {
+                for (int col = 0; col < static_cast<int>(this->opponentBoard[row].size()); ++col) {
                     this->opponentBoard[row][col]->blockSignals(true);
                 }
             }
@@ -362,7 +371,8 @@ void GameWindow::onElementClicked(int row, int col, bool isOpponentBoard)
 
     if (!skipAlreadyAttackedCheck) {
         // Vérifier que la case n'a pas déjà été attaquée (H ou M)
-        if (row < this->opponentBoard.size() && col < this->opponentBoard[row].size()) {
+        if (row < static_cast<int>(this->opponentBoard.size())
+            && col < static_cast<int>(this->opponentBoard[row].size())) {
             Clickablewidget* targetWidget = this->opponentBoard[row][col];
             if (targetWidget && (targetWidget->getCase() == "H" || targetWidget->getCase() == "M")) {
                 qDebug() << "Cette case a déjà été attaquée !";

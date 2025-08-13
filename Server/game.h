@@ -8,6 +8,9 @@ public:
     Game();
     explicit Game(Player* player1,Player* player2);
     ~Game();
+    Game(const Game&) = delete;
+    Game& operator=(const Game&) = delete;
+
 
     // Initialisation
     void initializeGame();

@@ -1,5 +1,6 @@
 #include "Boat.h"
 #include <stdexcept>
+#include <algorithm>
 
 // Constructeur
 Boat::Boat(int size) : m_size(size) {
@@ -36,13 +37,10 @@ const std::vector<Case*>& Boat::getStructure() const {
 
 // Vérifie si le bateau est coulé
 bool Boat::isSunk() const {
-    for (const Case* c : m_structure) {
-        if (c->getStatus() != Case::Hit) {
-            return false; // Au moins une case n'est pas touchée
-        }
-    }
-    return true; // Toutes les cases sont touchées
+    return std::all_of(m_structure.begin(), m_structure.end(),
+                       [](const Case* c){ return c && c->getStatus() == Case::Hit; });
 }
+
 
 // Retourne le nom du bateau
 const std::string& Boat::getName() const {

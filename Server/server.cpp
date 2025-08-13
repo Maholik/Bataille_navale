@@ -10,6 +10,8 @@
 #include <QSet>
 #include <QRandomGenerator>
 #include <iostream>
+#include <numeric>
+
 
 static QSet<QString> startAnnounced;
 
@@ -225,10 +227,17 @@ void Server::sendUpdateCaseToClients(const QString& _roomId, int row, int col)
         sunkMsg += QString::fromStdString(gamemodel->getOppositePlayer()->getName()) + ";";
         const auto& cells = hitBoat->getStructure();
         sunkMsg += QString::number(static_cast<int>(cells.size())) + ";";
-        for (Case* cell : cells)
-            sunkMsg += QString::number(cell->getRow()) + ";" + QString::number(cell->getCol()) + ";";
+
+        const QString coords = std::accumulate(
+            cells.begin(), cells.end(), QString(),
+            [](QString acc, const Case* cell) {
+                acc += QString::number(cell->getRow()) + ";" + QString::number(cell->getCol()) + ";";
+                return acc;
+            });
+        sunkMsg += coords;
         sunkMsg += "\n";
         sendToParticipants(sunkMsg);
+
 
         // Message système (💥)
         broadcastSystemMessage(_roomId,
@@ -299,13 +308,16 @@ void Server::sendStatusInfoToClients(const QString& _roomId){
 }
 
 
-void Server::sendErrorMessageToClients(QString& _roomId, QString& errorMessage){
+void Server::sendErrorMessageToClients(const QString& _roomId, const QString& errorMessage){
     Room* roomId = findRoomById(_roomId);
+    if (!roomId) return;
     for (QTcpSocket *client : qAsConst(roomId->clients)) {
-        QString roomInfo = "ERROR;" + errorMessage;
-        client->write(roomInfo.toUtf8());
+        const QString line = "ERROR;" + errorMessage;
+        client->write(line.toUtf8());
     }
 }
+
+
 
 void Server::onNewConnection()
 {
@@ -365,8 +377,15 @@ void Server::onReadyRead()
         if (checkRoomAccess(roomId, password)) {
             clientRoomMap[clientSocket] = roomId;  // Mettez à jour le mapping des rooms
             Room* room = findRoomById(roomId);
+            if (!room) {
+                clientSocket->write("ERR_INVALID_PASSWORD_OR_ROOM_NOT_FOUND\n");
+                clientSocket->flush();
+                return;
+            }
+
+            clientRoomMap[clientSocket] = roomId;
             room->clients.append(clientSocket);
-            if (room) {
+            room->clientCount++;        
                 if (room->clientCount == 2) {
                     QList<QTcpSocket*> _clientsInRoom = this->clientsInRoom(roomId);
 
@@ -400,7 +419,7 @@ void Server::onReadyRead()
                     clientSocket->write("ROOM_JOINED;" + roomId.toUtf8() + "\n");
                     sendRoomInfoToClients();
                 }
-            }
+
 
             qDebug() << "Client a rejoint la salle: " << roomId;
         } else {
@@ -478,7 +497,6 @@ else if (message.startsWith("MISSILE;")) {
     const int cols = targetBoard->getCols();
 
     int hitsThisMissile = 0;
-    int sunkThisMissile = 0;
 
     // Collecte des bateaux vivants touchables avant tir
     QSet<Boat*> boatsBefore;
@@ -518,10 +536,12 @@ else if (message.startsWith("MISSILE;")) {
         }
     }
 
-    // Compter les bateaux coulés par CE missile
-    for (Boat* b : std::as_const(boatsBefore)) {
-        if (b->isSunk()) sunkThisMissile++;
-    }
+
+
+    int sunkThisMissile =
+        std::count_if(boatsBefore.begin(), boatsBefore.end(),
+                      [](Boat* b){ return b && b->isSunk(); });
+
 
     // Score cumulé pour ce pouvoir
     for (int i = 0; i < hitsThisMissile; ++i)
@@ -655,8 +675,8 @@ else if (message.startsWith("MISSILE;")) {
         Game* gm = roomGameMap.value(roomId, nullptr);
         if (!gm) { clientSocket->write("ERROR;ROOM_NOT_FOUND\n"); return; }
 
-        const int W = t[3].toInt();
-        const int H = t[4].toInt();
+        //const int W = t[3].toInt();
+        //const int H = t[4].toInt();
         const int N = t[5].toInt();
 
         int idx = 6;
@@ -744,36 +764,29 @@ else if (message.startsWith("MISSILE;")) {
         }
 
 
-
-
-
 }
 
 Server::Room* Server::findRoomById(const QString& id_room)
 {
-    for (Room& room : rooms) {
-        if (room.id == id_room) {
-            return &room;
-        }
-    }
-    return nullptr;
+        auto it = std::find_if(rooms.begin(), rooms.end(),
+                               [&](const Room& r){ return r.id == id_room; });
+        return (it != rooms.end()) ? &*it : nullptr;
 }
 
 bool Server::checkRoomAccess(const QString &id_room, const QString &password)
 {
-    Room* room = findRoomById(id_room);
-    if (!room) {
-        qDebug() << "Room introuvable : " << id_room;
-        return false;
-    }
+        Room* room = findRoomById(id_room);
+        if (!room) {
+            qDebug() << "Room introuvable : " << id_room;
+            return false;
+        }
 
-    if (room->type == "privée" && room->password != password) {
-        qDebug() << "Mot de passe incorrect pour la salle : " << id_room;
+        if (room->type == "privée" && room->password != password) {
+            qDebug() << "Mot de passe incorrect pour la salle : " << id_room;
         return false;
-    }
+}
 
-    room->clientCount++;
-    return true;
+return true; // ⬅️ plus de room->clientCount++ ici
 }
 
 
@@ -902,13 +915,12 @@ void Server::broadcastSystemMessage(const QString& roomId, const QString& text)
 
 
 QList<QTcpSocket*> Server::clientsInRoom(const QString &_roomId) {
-    Room* roomId = findRoomById(_roomId);
-    QList<QTcpSocket*> roomClients;
-    for (QTcpSocket *client : roomId->clients) {
-        roomClients.append(client);
-    }
-    return roomClients;
+    if (Room* room = findRoomById(_roomId))
+        return room->clients;  // copie comme avant
+    return {};
 }
+
+
 
 void Server::createSoloGame(QTcpSocket* humanSocket, const QString& playerName)
 {
@@ -981,15 +993,7 @@ void Server::playAiTurn(const QString& roomId)
     bool sunk = false;
     // On teste si la case touchée appartient à un bateau désormais coulé
     // (reprise du helper suggéré précédemment)
-    auto findBoatAt = [](Board* board, int row, int col)->Boat* {
-        Case* target = board->getCase(row,col);
-        for (Boat* b : board->getAllBoats()) {
-            const auto& s = b->getStructure();
-            if (std::find(s.begin(), s.end(), target) != s.end())
-                return b;
-        }
-        return nullptr;
-    };
+
     Boat* b = findBoatAt(humanBoard, r, c);
     if (b && b->isSunk()) sunk = true;
 
@@ -1044,12 +1048,19 @@ void Server::sendUpdateCaseNoTurnSwap(QString& _roomId, int row, int col)
         sunkMsg += QString::fromStdString(gamemodel->getOppositePlayer()->getName()) + ";";
         const auto& cells = hitBoat->getStructure();
         sunkMsg += QString::number(static_cast<int>(cells.size())) + ";";
-        for (Case* cell : cells) {
-            sunkMsg += QString::number(cell->getRow()) + ";"
-                       +  QString::number(cell->getCol()) + ";";
-        }
+
+        const QString coords = std::accumulate(
+            cells.begin(), cells.end(), QString(),
+            [](QString acc, const Case* cell) {
+                acc += QString::number(cell->getRow()) + ";" +
+                       QString::number(cell->getCol()) + ";";
+                return acc;
+            });
+
+        sunkMsg += coords;
         sunkMsg += "\n";
         sendToParticipants(sunkMsg);
+
     }
 }
 

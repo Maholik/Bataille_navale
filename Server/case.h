@@ -10,7 +10,7 @@ public:
         Miss      // Tir manqué
     };
 
-    Case(int row = -1, int col = -1);  // Ajout des coordonnées dans le constructeur
+    explicit Case(int row = -1, int col = -1); // ← explicit
     Status getStatus() const;         // Retourne le statut de la case
     void setStatus(Status status);    // Modifie le statut de la case
 

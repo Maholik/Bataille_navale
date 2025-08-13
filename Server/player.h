@@ -8,6 +8,9 @@ class Player {
 public:
     explicit Player(const std::string& name);
     ~Player();
+    Player(const Player&) = delete;
+    Player& operator=(const Player&) = delete;
+
 
     // Accesseurs
     const std::string& getName() const;

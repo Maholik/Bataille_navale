@@ -3,6 +3,8 @@
 #include <QHBoxLayout>
 #include <QRegularExpression>
 #include <QMessageBox>
+#include <algorithm>
+
 
 static QStringList splitMessagesPlacement(const QString& chunk) {
     QString s = chunk;
@@ -51,7 +53,7 @@ PlacementWindow::PlacementWindow(const QString& _roomId,
             grid->addWidget(w, r, c);
             cells[r][c] = w;
             // capture r,c
-            connect(w, &Clickablewidget::clicked, this, [=](){ onCellClicked(r,c); });
+            connect(w, &Clickablewidget::clicked, this, [this, r, c]() { onCellClicked(r, c); });
         }
     }
     root->addLayout(left, 1);
@@ -61,9 +63,11 @@ PlacementWindow::PlacementWindow(const QString& _roomId,
 
     auto addPick = [&](const QString& label, int size, const QString& code){
         auto* b = new QPushButton(QString("%1 (%2)").arg(label).arg(size), this);
-        connect(b, &QPushButton::clicked, this, [=](){
-            selectedSize = size; selectedCode = code; infoLabel->setText(QString("Sélection: %1 (%2) — %3 restant(s)").arg(label).arg(size).arg(remainingOfSize(size)));
+        connect(b, &QPushButton::clicked, this, [this, label, size, code]() {
+            selectedSize = size; selectedCode = code;
+            infoLabel->setText(QString("Sélection: %1 (%2) — %3 restant(s)").arg(label).arg(size).arg(remainingOfSize(size)));
         });
+
         right->addWidget(b);
     };
     addPick("Porte-avions",5,"P");
@@ -94,18 +98,25 @@ PlacementWindow::PlacementWindow(const QString& _roomId,
 PlacementWindow::~PlacementWindow(){}
 
 int PlacementWindow::remainingOfSize(int size) const {
-    for (const auto& s : bag) if (s.size==size) return s.count;
-    return 0;
+    auto it = std::find_if(bag.begin(), bag.end(),
+                           [size](const BoatSpec& s){ return s.size == size; });
+    return (it != bag.end()) ? it->count : 0;
 }
 
+
 void PlacementWindow::pickNextSelectable() {
-    for (const auto& s : bag) if (s.count>0) { selectedSize=s.size; selectedCode=s.code;
+    auto it = std::find_if(bag.begin(), bag.end(),
+                           [](const BoatSpec& s){ return s.count > 0; });
+    if (it != bag.end()) {
+        selectedSize = it->size;
+        selectedCode = it->code;
         infoLabel->setText(QString("Sélection auto: %1 (%2) — %3 restant(s)")
-            .arg(selectedCode).arg(selectedSize).arg(s.count));
-        return;
+                               .arg(selectedCode).arg(selectedSize).arg(it->count));
+    } else {
+        infoLabel->setText("Tous les bateaux sont placés. Clique sur Valider.");
     }
-    infoLabel->setText("Tous les bateaux sont placés. Clique sur Valider.");
 }
+
 
 bool PlacementWindow::canPlaceAt(int row, int col, int size, bool H) const {
     if (H) {
@@ -118,14 +129,43 @@ bool PlacementWindow::canPlaceAt(int row, int col, int size, bool H) const {
     return true;
 }
 void PlacementWindow::paintBoat(int row, int col, int size, bool H, const QString& code) {
-    if (H) for (int i=0;i<size;++i) { delete cells[row][col+i]; cells[row][col+i] = new Clickablewidget(code, this); grid->addWidget(cells[row][col+i], row, col+i); connect(cells[row][col+i], &Clickablewidget::clicked, this, [=](){ onCellClicked(row,col+i); }); }
-    else   for (int i=0;i<size;++i) { delete cells[row+i][col]; cells[row+i][col] = new Clickablewidget(code, this); grid->addWidget(cells[row+i][col], row+i, col); connect(cells[row+i][col], &Clickablewidget::clicked, this, [=](){ onCellClicked(row+i,col); }); }
+    if (H) {
+        for (int i = 0; i < size; ++i) {
+        delete cells[row][col+i];
+        cells[row][col+i] = new Clickablewidget(code, this);
+        grid->addWidget(cells[row][col+i], row, col+i);
+        const int rr = row, cc = col + i;
+        connect(cells[rr][cc], &Clickablewidget::clicked, this, [this, rr, cc]() { onCellClicked(rr, cc); });
+        }
+    } else {
+        for (int i = 0; i < size; ++i) {
+        delete cells[row+i][col];
+        cells[row+i][col] = new Clickablewidget(code, this);
+        grid->addWidget(cells[row+i][col], row+i, col);
+        const int rr = row + i, cc = col;
+        connect(cells[rr][cc], &Clickablewidget::clicked, this, [this, rr, cc]() { onCellClicked(rr, cc); });
+        }
+    }
 }
 void PlacementWindow::unpaintBoat(int row, int col, int size, bool H) {
-    if (H) for (int i=0;i<size;++i) { delete cells[row][col+i]; cells[row][col+i] = new Clickablewidget("E", this); grid->addWidget(cells[row][col+i], row, col+i); connect(cells[row][col+i], &Clickablewidget::clicked, this, [=](){ onCellClicked(row,col+i); }); }
-    else   for (int i=0;i<size;++i) { delete cells[row+i][col]; cells[row+i][col] = new Clickablewidget("E", this); grid->addWidget(cells[row+i][col], row+i, col); connect(cells[row+i][col], &Clickablewidget::clicked, this, [=](){ onCellClicked(row+i,col); }); }
+    if (H) {
+        for (int i = 0; i < size; ++i) {
+        delete cells[row][col+i];
+        cells[row][col+i] = new Clickablewidget("E", this);
+        grid->addWidget(cells[row][col+i], row, col+i);
+        const int rr = row, cc = col + i;
+        connect(cells[rr][cc], &Clickablewidget::clicked, this, [this, rr, cc]() { onCellClicked(rr, cc); });
+        }
+    } else {
+        for (int i = 0; i < size; ++i) {
+        delete cells[row+i][col];
+        cells[row+i][col] = new Clickablewidget("E", this);
+        grid->addWidget(cells[row+i][col], row+i, col);
+        const int rr = row + i, cc = col;
+        connect(cells[rr][cc], &Clickablewidget::clicked, this, [this, rr, cc]() { onCellClicked(rr, cc); });
+        }
+    }
 }
-
 void PlacementWindow::onCellClicked(int r, int c) {
     // Si clic sur une case déjà occupée par le bateau sélectionné -> retrait (toggle simple)
     // Sinon place si possible.
@@ -133,11 +173,19 @@ void PlacementWindow::onCellClicked(int r, int c) {
 
     if (!canPlaceAt(r,c,selectedSize,horizontal)) { QMessageBox::warning(this,"Placement","Placement invalide."); return; }
     // Appliquer
-    paintBoat(r,c,selectedSize,horizontal,selectedCode);
+    paintBoat(r, c, selectedSize, horizontal, selectedCode);
     placed.push_back({selectedSize, r, c, horizontal});
+
     // décrémenter bag
-    for (auto& s : bag) if (s.size==selectedSize) { s.count--; break; }
+    if (auto it = std::find_if(bag.begin(), bag.end(),
+                               [this](const BoatSpec& s){ return s.size == selectedSize; });
+        it != bag.end())
+    {
+        it->count--;
+    }
+
     pickNextSelectable();
+
 }
 
 void PlacementWindow::onRotate() {
@@ -147,7 +195,11 @@ void PlacementWindow::onRotate() {
 
 void PlacementWindow::onValidate() {
     // Vérifier inventaire épuisé
-    for (const auto& s : bag) if (s.count>0) { QMessageBox::warning(this,"Placement","Tu dois placer tous les bateaux."); return; }
+    if (std::any_of(bag.begin(), bag.end(),
+                    [](const BoatSpec& s){ return s.count > 0; })) {
+        QMessageBox::warning(this, "Placement", "Tu dois placer tous les bateaux.");
+        return;
+    }
 
     // Construire SUBMIT_BOARD;roomId;playerName;W;H;N;size;row;col;H|V;...
     QString msg = QString("SUBMIT_BOARD;%1;%2;%3;%4;%5;")
