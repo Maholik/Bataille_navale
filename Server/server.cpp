@@ -11,6 +11,7 @@
 #include <QRandomGenerator>
 #include <iostream>
 
+static QSet<QString> startAnnounced;
 
 
 Server::Server(QObject *parent) :
@@ -99,7 +100,7 @@ static Boat* findBoatAt(Board* board, int row, int col) {
 }
 
 
-void Server::sendBoardsUpdateToClients(QString& _roomId){
+void Server::sendBoardsUpdateToClients(const QString& _roomId){
     Room* roomId = findRoomById(_roomId);
     if (!roomId) return;
 
@@ -175,27 +176,36 @@ void Server::sendBoardsUpdateToClients(QString& _roomId){
 
     sendToParticipants(roomInfo);
     qDebug() << "Boards envoyés aux participants";
+    if (!startAnnounced.contains(_roomId)) {
+        startAnnounced.insert(_roomId);
+        Game* gm = roomGameMap[_roomId];
+        const QString p1 = QString::fromStdString(gm->getPlayer1()->getName());
+        const QString p2 = QString::fromStdString(gm->getPlayer2()->getName());
+        broadcastSystemMessage(_roomId, QString("🎮 Début de partie : %1 vs %2").arg(p1, p2));
+    }
 }
 
 
-void Server::sendUpdateCaseToClients(QString& _roomId, int row, int col){
-    Room* roomId = findRoomById(_roomId);
-    if (!roomId) return;
+void Server::sendUpdateCaseToClients(const QString& _roomId, int row, int col)
+{
+    Room* room = findRoomById(_roomId);
+    if (!room) return;
 
     Game* gamemodel = this->roomGameMap[_roomId];
     const QString attacker = QString::fromStdString(gamemodel->getCurrentPlayer()->getName());
     const QString defender = QString::fromStdString(gamemodel->getOppositePlayer()->getName());
 
     auto sendToParticipants = [&](const QString& text) {
-        for (QTcpSocket* c : roomId->clients)     c->write(text.toUtf8());
-        for (QTcpSocket* s : roomId->spectators)  s->write(text.toUtf8());
+        for (QTcpSocket* c : room->clients)    c->write(text.toUtf8());
+        for (QTcpSocket* s : room->spectators) s->write(text.toUtf8());
     };
 
     // --- UPDATE_CASE ---
     {
         QString roomInfo = "UPDATE_CASE;";
-        Case* _case = gamemodel->getOppositePlayer()->getBoard()->getCase(row,col);
-        roomInfo += QString::fromStdString(gamemodel->getOppositePlayer()->getName()) + ";" + QString::number(row) + ";" + QString::number(col) + ";";
+        Case* _case = gamemodel->getOppositePlayer()->getBoard()->getCase(row, col);
+        roomInfo += QString::fromStdString(gamemodel->getOppositePlayer()->getName())
+                    + ";" + QString::number(row) + ";" + QString::number(col) + ";";
         QString _caseString = "X";
         switch (_case->getStatus()) {
         case Case::Hit:  _caseString = "H"; break;
@@ -207,7 +217,7 @@ void Server::sendUpdateCaseToClients(QString& _roomId, int row, int col){
         qDebug() << "Update envoyée (participants) : " << roomInfo;
     }
 
-    // --- Détection "coulé" -> BOAT_SUNK pour tous ---
+    // --- BOAT_SUNK éventuel ---
     Board* oppBoard = gamemodel->getOppositePlayer()->getBoard();
     Boat* hitBoat = findBoatAt(oppBoard, row, col);
     if (hitBoat && hitBoat->isSunk()) {
@@ -219,45 +229,48 @@ void Server::sendUpdateCaseToClients(QString& _roomId, int row, int col){
             sunkMsg += QString::number(cell->getRow()) + ";" + QString::number(cell->getCol()) + ";";
         sunkMsg += "\n";
         sendToParticipants(sunkMsg);
-        if (hitBoat && hitBoat->isSunk()) {
-            broadcastSystemMessage(_roomId, QString("💥 %1 a détruit un bateau de taille %2 chez %3 (impact %4,%5)")
-                                                .arg(attacker)
-                                                .arg(hitBoat->getSize())
-                                                .arg(defender)
-                                                .arg(row).arg(col));
-        }
 
-
+        // Message système (💥)
+        broadcastSystemMessage(_roomId,
+                               QString("💥 %1 a détruit un bateau de taille %2 chez %3 (impact %4,%5)")
+                                   .arg(attacker)
+                                   .arg(hitBoat->getSize())
+                                   .arg(defender)
+                                   .arg(row).arg(col));
     }
 
-    // --- scoring/drop + swap comme avant ---
+    // --- scoring + drop ---
     {
-        QString attacker = QString::fromStdString(gamemodel->getCurrentPlayer()->getName());
-        Board* opp = gamemodel->getOppositePlayer()->getBoard();
-        Case* cell = opp->getCase(row, col);
-        bool hit = (cell->getStatus() == Case::Hit);
-        bool sunk = (hitBoat && hitBoat->isSunk());
+        Case* cell = oppBoard->getCase(row, col);
+        const bool hit  = (cell->getStatus() == Case::Hit);
+        const bool sunk = (hitBoat && hitBoat->isSunk());
+
         addScoreForHitAndSunk(_roomId, attacker, hit, sunk);
         tryDropPowerEvery4Turns(_roomId, attacker);
     }
-    Game* gm = roomGameMap[_roomId];
-    Case* cell = gm->getOppositePlayer()->getBoard()->getCase(row, col);
 
-    if (cell->getStatus() == Case::Hit) {
-        broadcastSystemMessage(_roomId, QString("🔥 %1 a touché %2 en (%3,%4)")
-                                            .arg(attacker, defender)
-                                            .arg(row).arg(col));
-    } else if (cell->getStatus() == Case::Miss) {
-        broadcastSystemMessage(_roomId, QString("✖ %1 a manqué %2 en (%3,%4)")
-                                            .arg(attacker, defender)
-                                            .arg(row).arg(col));
+    // --- messages système (🔥 / ✖) ---
+    {
+        Case* cell = oppBoard->getCase(row, col);
+        if (cell->getStatus() == Case::Hit) {
+            broadcastSystemMessage(_roomId,
+                                   QString("🔥 %1 a touché %2 en (%3,%4)")
+                                       .arg(attacker, defender)
+                                       .arg(row).arg(col));
+        } else if (cell->getStatus() == Case::Miss) {
+            broadcastSystemMessage(_roomId,
+                                   QString("✖ %1 a manqué %2 en (%3,%4)")
+                                       .arg(attacker, defender)
+                                       .arg(row).arg(col));
+        }
     }
 
+    // --- FIN : swap de tour ici (STATUS à faire par l'appelant, comme avant) ---
     gamemodel->changePlayer();
 }
 
 
-void Server::sendStatusInfoToClients(QString& _roomId){
+void Server::sendStatusInfoToClients(const QString& _roomId){
     Room* roomId = findRoomById(_roomId);
     if (!roomId) return;
 
@@ -427,99 +440,105 @@ void Server::onReadyRead()
         }
     }
 
-    else if (message.startsWith("MISSILE;")) {
-        QStringList parts = message.split(';', Qt::SkipEmptyParts);
-        if (parts.size() < 4) { clientSocket->write("POWER_ERR;BAD_MISSILE_FORMAT\n"); return; }
-        QString roomId = parts[1];
-        int row = parts[2].toInt();
-        int col = parts[3].toInt();
+else if (message.startsWith("MISSILE;")) {
+    QStringList parts = message.split(';', Qt::SkipEmptyParts);
+    if (parts.size() < 4) { clientSocket->write("POWER_ERR;BAD_MISSILE_FORMAT\n"); return; }
 
-        Game* gamemodel = roomGameMap.value(roomId, nullptr);
-        if (!gamemodel) return;
+    const QString roomId = parts[1];
+    const int row = parts[2].toInt();
+    const int col = parts[3].toInt();
 
-        QString attacker = QString::fromStdString(gamemodel->getCurrentPlayer()->getName());
+    Game* gamemodel = roomGameMap.value(roomId, nullptr);
+    if (!gamemodel) return;
 
-        // Vérif inventaire/score
-        if (!canUseMissile(roomId, attacker)) {
-            clientSocket->write("POWER_ERR;MISSILE_NOT_AVAILABLE_OR_NOT_ENOUGH_SCORE\n");
-            return;
+    const QString attacker = QString::fromStdString(gamemodel->getCurrentPlayer()->getName());
+    const QString defender = QString::fromStdString(gamemodel->getOppositePlayer()->getName());
+
+    // Inventaire/score
+    if (!canUseMissile(roomId, attacker)) {
+        clientSocket->write("POWER_ERR;MISSILE_NOT_AVAILABLE_OR_NOT_ENOUGH_SCORE\n");
+        return;
+    }
+    consumeMissileOrPay(roomId, attacker);
+
+    // Annonce du pouvoir (avec \n !)
+    broadcastSystemMessage(roomId, QString("🚀 %1 a utilisé MISSILE au centre (%2,%3)").arg(attacker).arg(row).arg(col));
+
+    Board* targetBoard = gamemodel->getOppositePlayer()->getBoard();
+    const int rows = targetBoard->getRows();
+    const int cols = targetBoard->getCols();
+
+    int hitsThisMissile = 0;
+    int sunkThisMissile = 0;
+
+    // Collecte des bateaux vivants touchables avant tir
+    QSet<Boat*> boatsBefore;
+    auto findBoatAtLocal = [](Board* board, int r, int c)->Boat* {
+        Case* cell = board->getCase(r,c);
+        for (Boat* b : board->getAllBoats()) {
+            const auto& s = b->getStructure();
+            if (std::find(s.begin(), s.end(), cell) != s.end()) return b;
         }
-        consumeMissileOrPay(roomId, attacker);
-        broadcastSystemMessage(roomId, QString("🚀 %1 a utilisé MISSILE au centre (%2,%3)")
-                                           .arg(attacker).arg(row).arg(col));
-
-
-        Board* targetBoard = gamemodel->getOppositePlayer()->getBoard();
-
-        // Stats du missile
-        int hitsThisMissile = 0;
-        QSet<Boat*> boatsBefore;   // bateaux rencontrés avant tirs
-        QSet<Boat*> boatsAfter;    // bateaux encore vivants après tirs (pour comparer)
-
-        // --- 1) Collecte des bateaux concernés AVANT ---
-        auto findBoatAtLocal = [](Board* board, int r, int c)->Boat* {
-            Case* cell = board->getCase(r,c);
-            for (Boat* b : board->getAllBoats()) {
-                const auto& s = b->getStructure();
-                if (std::find(s.begin(), s.end(), cell) != s.end()) return b;
+        return nullptr;
+    };
+    for (int dr = -1; dr <= 1; ++dr) {
+        for (int dc = -1; dc <= 1; ++dc) {
+            const int r = row + dr, c = col + dc;
+            if (r < 0 || c < 0 || r >= rows || c >= cols) continue;
+            if (Boat* b = findBoatAtLocal(targetBoard, r, c)) {
+                if (!b->isSunk()) boatsBefore.insert(b);
             }
-            return nullptr;
-        };
-
-        for (int dr = -1; dr <= 1; ++dr) {
-            for (int dc = -1; dc <= 1; ++dc) {
-                int r = row + dr, c = col + dc;
-                if (r < 0 || r >= targetBoard->getRows() || c < 0 || c >= targetBoard->getCols()) continue;
-                Boat* b = findBoatAtLocal(targetBoard, r, c);
-                if (b && !b->isSunk()) boatsBefore.insert(b);
-            }
-        }
-
-        // --- 2) Appliquer les 9 tirs + push UPDATE_CASE (sans swap de tour) ---
-        for (int dr = -1; dr <= 1; ++dr) {
-            for (int dc = -1; dc <= 1; ++dc) {
-                int r = row + dr, c = col + dc;
-                if (r < 0 || r >= targetBoard->getRows() || c < 0 || c >= targetBoard->getCols()) continue;
-
-                // Tire (même si déjà touché) :
-                gamemodel->attackPlayer(r, c);
-
-                // Compte un "hit" si la case est Hit après tir
-                if (targetBoard->getCase(r, c)->getStatus() == Case::Hit) {
-                    hitsThisMissile++;
-                }
-
-                // Envoie la mise à jour de case sans changer de joueur
-                QString rid = roomId;
-                sendUpdateCaseNoTurnSwap(rid, r, c);
-            }
-        }
-
-        // --- 3) Compter les bateaux coulés par ce missile ---
-        int sunkThisMissile = 0;
-        for (Boat* b : std::as_const(boatsBefore)) {
-            if (b->isSunk()) sunkThisMissile++;
-        }
-
-        // --- 4) Scoring cumulé du missile ---
-        for (int i = 0; i < hitsThisMissile; ++i)
-            addScoreForHitAndSunk(roomId, attacker, /*hit=*/true,  /*sunk=*/false);
-        for (int i = 0; i < sunkThisMissile; ++i)
-            addScoreForHitAndSunk(roomId, attacker, /*hit=*/false, /*sunk=*/true);
-
-        // --- 5) Drop auto + FIN DE TOUR (une seule fois) ---
-        tryDropPowerEvery4Turns(roomId, attacker);
-        gamemodel->changePlayer();
-
-        // --- 6) Status + tour IA éventuel ---
-        sendStatusInfoToClients(roomId);
-
-        if (roomAiMap.contains(roomId)
-            && QString::fromStdString(gamemodel->getCurrentPlayer()->getName()) == "AI"
-            && !gamemodel->isGameOver()) {
-            QTimer::singleShot(300, [this, roomId]() { playAiTurn(roomId); });
         }
     }
+
+    // 9 tirs : pas de swap de tour ici
+    for (int dr = -1; dr <= 1; ++dr) {
+        for (int dc = -1; dc <= 1; ++dc) {
+            const int r = row + dr, c = col + dc;
+            if (r < 0 || c < 0 || r >= rows || c >= cols) continue;
+
+            gamemodel->attackPlayer(r, c);
+
+            if (targetBoard->getCase(r, c)->getStatus() == Case::Hit) {
+                hitsThisMissile++;
+            }
+
+            // UPDATE_CASE (+ éventuel BOAT_SUNK) sans changement de tour
+            QString rid = roomId;
+            sendUpdateCaseNoTurnSwap(rid, r, c);
+        }
+    }
+
+    // Compter les bateaux coulés par CE missile
+    for (Boat* b : std::as_const(boatsBefore)) {
+        if (b->isSunk()) sunkThisMissile++;
+    }
+
+    // Score cumulé pour ce pouvoir
+    for (int i = 0; i < hitsThisMissile; ++i)
+        addScoreForHitAndSunk(roomId, attacker, /*hit=*/true,  /*sunk=*/false);
+    for (int i = 0; i < sunkThisMissile; ++i)
+        addScoreForHitAndSunk(roomId, attacker, /*hit=*/false, /*sunk=*/true);
+
+    // Drop éventuel + FIN DE TOUR (une seule fois ici)
+    tryDropPowerEvery4Turns(roomId, attacker);
+
+    // Debug : tracer le swap
+    const QString beforeSwap = QString::fromStdString(gamemodel->getCurrentPlayer()->getName());
+    gamemodel->changePlayer();
+    const QString afterSwap  = QString::fromStdString(gamemodel->getCurrentPlayer()->getName());
+    qDebug() << "[MISSILE] swap turn:" << beforeSwap << "->" << afterSwap;
+
+    // STATUS final (toujours \n)
+    sendStatusInfoToClients(roomId);
+
+    // Tour IA éventuel
+    if (roomAiMap.contains(roomId)
+        && QString::fromStdString(gamemodel->getCurrentPlayer()->getName()) == "AI"
+        && !gamemodel->isGameOver()) {
+        QTimer::singleShot(300, [this, roomId]() { playAiTurn(roomId); });
+    }
+}
 
 
     else if(message.startsWith("QUIT_ROOM;")){
@@ -735,6 +754,8 @@ void Server::onDisconnected()
     clientSocket->deleteLater();
 
     qDebug() << "Un client s'est déconnecté.";
+    broadcastSystemMessage(rid, QString("👋 Un spectateur a quitté la room."));
+
 }
 
 
@@ -745,33 +766,29 @@ void Server::broadcastMessageToRoom(const QString& roomId, const QString& chatMe
 
     QTcpSocket* senderSocket = qobject_cast<QTcpSocket*>(sender());
     const QString from = clientToNameMap[clientIdMap[senderSocket]];
-    const QString formatted = QString("SEND_CHAT_MESSAGE;%1;%2").arg(from, chatMessage);
 
-    // Clients
+    const QString line = QString("SEND_CHAT_MESSAGE;%1;%2\n").arg(from, chatMessage);
+
     for (QTcpSocket* client : room->clients) {
-        if (client != senderSocket) {
-            client->write(formatted.toUtf8());
-            client->flush();
-        }
+        if (client != senderSocket) { client->write(line.toUtf8()); client->flush(); }
     }
-    // Spectateurs
     for (QTcpSocket* spec : room->spectators) {
-        if (spec != senderSocket) {
-            spec->write(formatted.toUtf8());
-            spec->flush();
-        }
+        if (spec != senderSocket)   { spec->write(line.toUtf8());   spec->flush();   }
     }
 }
+
 
 void Server::broadcastSystemMessage(const QString& roomId, const QString& text)
 {
     Room* room = findRoomById(roomId);
     if (!room) return;
 
-    const QString formatted = QString("SEND_CHAT_MESSAGE;SYSTEM;%1").arg(text);
-    for (QTcpSocket* c : room->clients)    { c->write(formatted.toUtf8()); c->flush(); }
-    for (QTcpSocket* s : room->spectators) { s->write(formatted.toUtf8()); s->flush(); }
+    const QString line = QString("SEND_CHAT_MESSAGE;SYSTEM;%1\n").arg(text);
+
+    for (QTcpSocket* c : room->clients)    { c->write(line.toUtf8()); c->flush(); }
+    for (QTcpSocket* s : room->spectators) { s->write(line.toUtf8()); s->flush(); }
 }
+
 
 
 QList<QTcpSocket*> Server::clientsInRoom(const QString &_roomId) {
@@ -901,11 +918,12 @@ void Server::sendUpdateCaseNoTurnSwap(QString& _roomId, int row, int col)
         for (QTcpSocket* s : roomId->spectators)  s->write(text.toUtf8());
     };
 
-    // UPDATE_CASE sans swap
+    // UPDATE_CASE (pas de swap de tour ici)
     {
         QString roomInfo = "UPDATE_CASE;";
         Case* _case = gamemodel->getOppositePlayer()->getBoard()->getCase(row,col);
-        roomInfo += QString::fromStdString(gamemodel->getOppositePlayer()->getName()) + ";" + QString::number(row) + ";" + QString::number(col) + ";";
+        roomInfo += QString::fromStdString(gamemodel->getOppositePlayer()->getName())
+                    + ";" + QString::number(row) + ";" + QString::number(col) + ";";
         QString _caseString = "X";
         switch (_case->getStatus()) {
         case Case::Hit:  _caseString = "H"; break;
@@ -915,23 +933,8 @@ void Server::sendUpdateCaseNoTurnSwap(QString& _roomId, int row, int col)
         roomInfo += _caseString + ";\n";
         sendToParticipants(roomInfo);
     }
-    {
-        Game* gm = roomGameMap[_roomId];
-        const QString attacker = QString::fromStdString(gm->getCurrentPlayer()->getName());
-        const QString defender = QString::fromStdString(gm->getOppositePlayer()->getName());
-        Case* cell = gm->getOppositePlayer()->getBoard()->getCase(row, col);
-        if (cell->getStatus() == Case::Hit) {
-            broadcastSystemMessage(_roomId, QString("🔥 %1 a touché %2 en (%3,%4)")
-                                                .arg(attacker, defender)
-                                                .arg(row).arg(col));
-        } else if (cell->getStatus() == Case::Miss) {
-            broadcastSystemMessage(_roomId, QString("✖ %1 a manqué %2 en (%3,%4)")
-                                                .arg(attacker, defender)
-                                                .arg(row).arg(col));
-        }
-    }
 
-    // Détection "coulé" → BOAT_SUNK (sans swap)
+    // BOAT_SUNK si besoin (toujours sans swap ici)
     Board* oppBoard = gamemodel->getOppositePlayer()->getBoard();
     Boat* hitBoat = findBoatAt(oppBoard, row, col);
     if (hitBoat && hitBoat->isSunk()) {
@@ -939,23 +942,15 @@ void Server::sendUpdateCaseNoTurnSwap(QString& _roomId, int row, int col)
         sunkMsg += QString::fromStdString(gamemodel->getOppositePlayer()->getName()) + ";";
         const auto& cells = hitBoat->getStructure();
         sunkMsg += QString::number(static_cast<int>(cells.size())) + ";";
-        for (Case* cell : cells)
-            sunkMsg += QString::number(cell->getRow()) + ";" + QString::number(cell->getCol()) + ";";
+        for (Case* cell : cells) {
+            sunkMsg += QString::number(cell->getRow()) + ";"
+                       +  QString::number(cell->getCol()) + ";";
+        }
         sunkMsg += "\n";
         sendToParticipants(sunkMsg);
     }
-    // ... et après l'envoi de BOAT_SUNK;
-    if (hitBoat && hitBoat->isSunk()) {
-        Game* gm = roomGameMap[_roomId];
-        const QString attacker = QString::fromStdString(gm->getCurrentPlayer()->getName());
-        const QString defender = QString::fromStdString(gm->getOppositePlayer()->getName());
-        broadcastSystemMessage(_roomId, QString("💥 %1 a détruit un bateau de taille %2 chez %3 (impact %4,%5)")
-                                            .arg(attacker)
-                                            .arg(hitBoat->getSize())
-                                            .arg(defender)
-                                            .arg(row).arg(col));
-    }
 }
+
 
 
 void Server::broadcastScoreAndInv(const QString& roomId, const QString& player) {
@@ -968,7 +963,7 @@ void Server::broadcastScoreAndInv(const QString& roomId, const QString& player) 
                       .arg(ps.scanners)
                       .arg(ps.missiles);
     for (QTcpSocket* c : room->clients) c->write(msg.toUtf8());
-    //Envoi score et inventaire for (QTcpSocket* s : room->spectators) s->write(msg.toUtf8());
+    for (QTcpSocket* s : room->spectators) s->write(msg.toUtf8()); //Envoi score et inventaire
 }
 
 // règles de score (ajuste si tu veux)

@@ -6,6 +6,19 @@
 #include <QRegularExpression>
 #include <QMessageBox>
 #include <QTime>
+#include <QRegularExpression>
+
+static QStringList splitMessages(const QString& chunk) {
+    QString s = chunk;
+    const QStringList tags = {
+        "UPDATE_CASE;", "BOAT_SUNK;", "STATUS;", "SCORE_UPDATE;", "POWER_AVAILABLE;", "SEND_CHAT_MESSAGE;"
+    };
+    for (const QString& t : tags) {
+        s.replace(QRegularExpression("(?<!\\n)" + QRegularExpression::escape(t)), "\n" + t);
+    }
+    return s.split('\n', Qt::SkipEmptyParts);
+}
+
 SpectatorWindow::SpectatorWindow(const QString& _roomId, QTcpSocket* _socket, const QString& _spectatorName, QWidget* parent)
     : QMainWindow(parent), roomId(_roomId), socket(_socket), spectatorName(_spectatorName)
 {
@@ -112,16 +125,21 @@ void SpectatorWindow::updateCellFor(const QString& owner, int r, int c, const QS
     if (c < 0 || c >= (int)it.value()[r].size()) return;
 
     Clickablewidget* old = it.value()[r][c];
+    if (old) {
+        gridFor(owner)->removeWidget(old);
+        old->deleteLater();
+    }
     auto *w = new Clickablewidget(symbol, this);
     gridFor(owner)->addWidget(w, r, c);
     it.value()[r][c] = w;
 }
 
+
 void SpectatorWindow::onReadyRead()
 {
     QByteArray data = socket->readAll();
     const QString all = QString::fromUtf8(data);
-    const QStringList msgs = all.split('\n', Qt::SkipEmptyParts);
+    const QStringList msgs = splitMessages(all);
 
     for (const QString &msg : msgs) {
 
@@ -199,10 +217,10 @@ void SpectatorWindow::onReadyRead()
         }
 
         else if (msg.startsWith("SEND_CHAT_MESSAGE;")) {
-            QStringList parts = msg.split(';', Qt::SkipEmptyParts);
+            const QStringList parts = msg.split(';', Qt::SkipEmptyParts);
             if (parts.size() >= 3) {
                 const QString from    = parts[1];
-                const QString content = parts.mid(2).join(";"); // si le message contient des ';'
+                const QString content = parts.mid(2).join(";");
                 const QString hhmm    = QTime::currentTime().toString("HH:mm");
 
                 if (from == "SYSTEM") {
@@ -218,6 +236,7 @@ void SpectatorWindow::onReadyRead()
                 }
             }
         }
+
 
 
 

@@ -4,6 +4,21 @@
 #include <QRegularExpression> // add this at the top
 #include <QTime>
 
+#include <QRegularExpression>
+
+static QStringList splitMessages(const QString& chunk) {
+    // Sécurise en injectant des \n avant chaque tag connu
+    QString s = chunk;
+    // IMPORTANT: on évite d'insérer un \n si le tag est déjà en début de ligne
+    const QStringList tags = {
+        "UPDATE_CASE;", "BOAT_SUNK;", "STATUS;", "SCORE_UPDATE;", "POWER_AVAILABLE;", "SEND_CHAT_MESSAGE;"
+    };
+    for (const QString& t : tags) {
+        s.replace(QRegularExpression("(?<!\\n)" + QRegularExpression::escape(t)), "\n" + t);
+    }
+    // Puis split par lignes
+    return s.split('\n', Qt::SkipEmptyParts);
+}
 
 
 GameWindow::GameWindow(const QString &_roomId, QTcpSocket *_socket, const QString& _playerName,QWidget *parent) :
@@ -41,9 +56,9 @@ void GameWindow::onReadyRead() {
 
     qDebug() << "Message reçu du serveur:" << message;
 
-    QStringList messages = message.split('\n', Qt::SkipEmptyParts);
+    const QStringList msgs = splitMessages(message);
 
-    for (const QString &msg : messages) {
+    for (const QString &msg : msgs) {
         if (msg.startsWith("BOARD_CREATE;")) {
             // Split on ';' or '\n'
             QStringList t = msg.split(QRegularExpression("[;\n]"), Qt::SkipEmptyParts);
@@ -126,12 +141,12 @@ void GameWindow::onReadyRead() {
             this->close();       // Ferme la GameWindow
         }
         // ... dans GameWindow::onReadyRead()
-        else if (message.startsWith("SEND_CHAT_MESSAGE;")) {
-            const QStringList parts = message.split(';', Qt::SkipEmptyParts);
+        else if (msg.startsWith("SEND_CHAT_MESSAGE;")) {
+            const QStringList parts = msg.split(';', Qt::SkipEmptyParts);
             if (parts.size() >= 3) {
-                const QString from = parts[1];
-                const QString content = parts.mid(2).join(";"); // au cas où le texte contient ';'
-                const QString hhmm = QTime::currentTime().toString("HH:mm");
+                const QString from    = parts[1];
+                const QString content = parts.mid(2).join(";"); // si le texte contient des ';'
+                const QString hhmm    = QTime::currentTime().toString("HH:mm");
 
                 if (from == "SYSTEM") {
                     ui->messageIncomeBox->append(
@@ -146,6 +161,7 @@ void GameWindow::onReadyRead() {
                 }
             }
         }
+
 
 
         else if (msg.startsWith("RECONNAISANCE_RESULT;")) {
@@ -249,20 +265,34 @@ void GameWindow::updateBoard(const QString& oppositePlayer, int row, int col, QS
 {
     if (oppositePlayer != this->playerName) {
         // plateau adverse
+        if (row >= 0 && row < (int)opponentBoard.size()
+            && col >= 0 && col < (int)opponentBoard[row].size()
+            && opponentBoard[row][col]) {
+            auto *old = opponentBoard[row][col];
+            ui->gridOppositeBoard->removeWidget(old);
+            old->deleteLater();
+        }
         Clickablewidget *w = new Clickablewidget(_case, this);
         connect(w, &Clickablewidget::clicked, this, [this,row,col](){
             onElementClicked(row, col, /*isOpponentBoard=*/true);
         });
         ui->gridOppositeBoard->addWidget(w, row, col);
-        this->opponentBoard[row][col] = w;
+        opponentBoard[row][col] = w;
     } else {
         // mon plateau
+        if (row >= 0 && row < (int)myBoard.size()
+            && col >= 0 && col < (int)myBoard[row].size()
+            && myBoard[row][col]) {
+            auto *old = myBoard[row][col];
+            ui->gridCurrentBoard->removeWidget(old);
+            old->deleteLater();
+        }
         Clickablewidget *w = new Clickablewidget(_case, this);
-        // (pas besoin de clics sur mon plateau, mais on peut ignorer)
         ui->gridCurrentBoard->addWidget(w, row, col);
-        this->myBoard[row][col] = w;
+        myBoard[row][col] = w;
     }
 }
+
 
 
 void GameWindow::statusModification(const QString& currentPlayer, bool isGameOver, const QString& playerWinner){

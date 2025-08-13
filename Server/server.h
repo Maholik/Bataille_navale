@@ -19,13 +19,13 @@ public:
     void stopServer();
     void createRoom(const QString& id_room, const QString& name, const QString& type, const QString& password);
     void sendRoomInfoToClients();
-    void sendBoardsUpdateToClients(QString& roomId);
-    void sendStatusInfoToClients(QString& roomId);
+    void sendBoardsUpdateToClients(const QString& roomId);
+    void sendStatusInfoToClients(const QString& roomId);
     void sendErrorMessageToClients(QString& roomId, QString&);
     void broadcastMessageToRoom(const QString& roomId, const QString& message);
     void broadcastSystemMessage(const QString& roomId, const QString& text);
 
-    void sendUpdateCaseToClients(QString& _roomId, int row, int col);
+    void sendUpdateCaseToClients(const QString& _roomId, int row, int col);
     QList<QTcpSocket*> clientsInRoom(const QString &roomId);
     void onRoomDisconnected(const QString&);
 
