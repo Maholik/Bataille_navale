@@ -5,6 +5,8 @@
 #include <set>
 #include <algorithm>
 #include <QDebug>
+#include <QRandomGenerator>
+
 
 
 // Constructeur
@@ -39,32 +41,52 @@ void Game::initializeGame() {
 }
 
 // Place les bateaux aléatoirement sur le plateau d'un joueur
+// Server/game.cpp
 void Game::placeBoatsRandomly(Player* player) {
     Board* board = player->getBoard();
 
-    // Créer des bateaux
-    Boat* destroyer = new Boat(2);
-    Boat* submarine1 = new Boat(3);
-    Boat* submarine2 = new Boat(3);
-    Boat* cruiser = new Boat(4);
-    Boat* carrier = new Boat(5);
+    // IMPORTANT : pas de srand() ici (tu l’as déjà fait dans le ctor du Game).
+    auto* rng = QRandomGenerator::global();
+    const int rows = board->getRows();
+    const int cols = board->getCols();
 
-    std::vector<Boat*> boats = {destroyer, submarine1, submarine2, cruiser, carrier};
+    // Flotte alignée à ton mapping d’envoi (2=D, 3=S, 4=C, 5=P) — voir §C.
+    std::vector<int> sizes = {2,3,3,4,5};
 
-    // Tenter de placer chaque bateau
-    for (Boat* boat : boats) {
-        int maxAttempts = 100;
-        while (maxAttempts-- > 0) {
-            int row = std::rand() % board->getRows();
-            int col = std::rand() % board->getCols();
-            bool horizontal = std::rand() % 2 == 0;
+    for (int size : sizes) {
+        // Allouer le bateau avant, mais prévoir le nettoyage si jamais on échoue
+        Boat* boat = new Boat(size);
+
+        // Tentatives proportionnelles à la taille de la grille
+        int attempts = std::max(200, rows * cols * 5);
+        bool placed = false;
+
+        while (attempts-- > 0) {
+            const int row = rng->bounded(rows);
+            const int col = rng->bounded(cols);
+            const bool horizontal = rng->bounded(2) == 0;
 
             if (board->placeBoat(boat, row, col, horizontal)) {
-                break; // Bateau placé avec succès
+                placed = true;
+                break;
             }
+        }
+
+        if (!placed) {
+            // Échec exceptionnel : on libère le bateau pour éviter une fuite.
+            delete boat;
+            // Option 1 : relancer complètement la pose de TOUTE la flotte (simple).
+            // Option 2 : throw/retourner une erreur que l’appelant gérera.
+            // Ici on choisit de relancer une fois toute la flotte :
+            // -- clear board si tu as une API pour ça (sinon laisse comme aujourd’hui).
+            // -- recommencer sizes depuis le début.
+            // Pour rester "drop-in", on logge et on continue.
+            qWarning() << "[AI] Impossible de placer un bateau de taille" << size
+                       << "après beaucoup d'essais. La flotte peut être incomplète.";
         }
     }
 }
+
 
 //Methode que j'ai rajoute pour pouvoir jouer via la vue
 void Game::attackPlayer(int row, int col){

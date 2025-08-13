@@ -26,6 +26,10 @@ add_executable(Client
     spectatorwindow.h
     spectatorwindow.cpp
     spectatorwindow.ui
+    placementwindow.cpp
+    placementwindow.h
+
+
 )
 
 target_link_libraries (Client PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)

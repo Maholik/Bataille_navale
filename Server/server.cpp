@@ -366,33 +366,42 @@ void Server::onReadyRead()
             clientRoomMap[clientSocket] = roomId;  // Mettez à jour le mapping des rooms
             Room* room = findRoomById(roomId);
             room->clients.append(clientSocket);
-            if(room){
-                if(room->clientCount == 2){
+            if (room) {
+                if (room->clientCount == 2) {
                     QList<QTcpSocket*> _clientsInRoom = this->clientsInRoom(roomId);
 
                     Player* player1 = new Player{clientToNameMap[clientIdMap[_clientsInRoom[0]]].toStdString()};
                     Player* player2 = new Player{clientToNameMap[clientIdMap[_clientsInRoom[1]]].toStdString()};
 
-                    // Créez une instance de jeu
-                    Game* gamemodel = new Game(player1,player2);
-                    // Init états joueurs (2 joueurs)
+                    Game* gamemodel = new Game(player1, player2);
                     roomState[roomId][QString::fromStdString(player1->getName())] = PlayerState{};
                     roomState[roomId][QString::fromStdString(player2->getName())] = PlayerState{};
 
                     this->games.append(gamemodel);
                     this->roomGameMap[roomId] = gamemodel;
-                    gamemodel->initializeGame();
-                    gamemodel->displayBoards();
+
+                    // NEW: phase de placement
+                    roomInPlacement[roomId] = true;
+                    const int W = player1->getBoard()->getCols();
+                    const int H = player1->getBoard()->getRows();
+                    const QString p1 = QString::fromStdString(player1->getName());
+                    const QString p2 = QString::fromStdString(player2->getName());
+
+                    const QString startMsg = QString("PLACEMENT_START;%1;%2;%3;%4;%5;%6\n")
+                                                 .arg(roomId, p1, p2)
+                                                 .arg(W).arg(H)
+                                                 .arg("multi");
 
                     for (QTcpSocket* client : _clientsInRoom) {
-                        client->write("ROOM_READY;" + roomId.toUtf8());
+                        client->write(startMsg.toUtf8());
+                        client->flush();
                     }
-                }
-                else{
+                } else {
                     clientSocket->write("ROOM_JOINED;" + roomId.toUtf8() + "\n");
                     sendRoomInfoToClients();
                 }
             }
+
             qDebug() << "Client a rejoint la salle: " << roomId;
         } else {
             clientSocket->write("ERR_INVALID_PASSWORD_OR_ROOM_NOT_FOUND\n");
@@ -636,6 +645,107 @@ else if (message.startsWith("MISSILE;")) {
         }
     }
 
+    else if (message.startsWith("SUBMIT_BOARD;")) {
+        // SUBMIT_BOARD;roomId;playerName;W;H;N; size;row;col;H|V; ... \n
+        QStringList t = message.split(';', Qt::SkipEmptyParts);
+        if (t.size() < 6) { clientSocket->write("ERROR;BAD_SUBMIT_FORMAT\n"); return; }
+
+        const QString roomId = t[1];
+        const QString who    = t[2];
+        Game* gm = roomGameMap.value(roomId, nullptr);
+        if (!gm) { clientSocket->write("ERROR;ROOM_NOT_FOUND\n"); return; }
+
+        const int W = t[3].toInt();
+        const int H = t[4].toInt();
+        const int N = t[5].toInt();
+
+        int idx = 6;
+        QVector<SubmittedBoat> boats;
+        for (int i=0;i<N;++i) {
+            if (idx+3 >= t.size()) { clientSocket->write("ERROR;BAD_SUBMIT_COUNT\n"); return; }
+            SubmittedBoat b;
+            b.size = t[idx++].toInt();
+            b.row  = t[idx++].toInt();
+            b.col  = t[idx++].toInt();
+            b.horizontal = (t[idx++].trimmed() == "H");
+            boats.push_back(b);
+        }
+
+        // Récupérer le Board du joueur cible
+        Player* p1 = gm->getPlayer1();
+        Player* p2 = gm->getPlayer2();
+        Player* target = (QString::fromStdString(p1->getName()) == who) ? p1 : p2;
+        Board* board = target->getBoard();
+
+        // Proto simple: on suppose board encore vide (phase init)
+        // On place chaque bateau via placeBoat
+        for (const auto& b : boats) {
+            Boat* boat = new Boat(b.size);
+            bool ok = board->placeBoat(boat, b.row, b.col, b.horizontal);
+            if (!ok) {
+            clientSocket->write("ERROR;INVALID_PLACEMENT\n");
+            clientSocket->flush();
+            delete boat;
+            return;
+            }
+        }
+
+        // Mémoriser "who a envoyé"
+        pendingPlacements[roomId][who] = boats;
+
+        // Si solo: dès que humain a placé -> placer IA aléatoirement
+        const bool isSolo = roomAiMap.contains(roomId);
+        if (isSolo) {
+            // IA = l'autre joueur
+            Player* ai = (target==p1) ? p2 : p1;
+            // placement aléatoire IA (ta méthode existe déjà)
+            // Game::placeBoatsRandomly est private; on utilise une boucle identique ici
+            // => plus simple: exposer initializeGame() côté IA ? On refait la boucle locale :
+            {
+            Board* b = ai->getBoard();
+            QVector<int> sizes = {2,3,3,4,5};
+            for (int s : sizes) {
+                Boat* boat = new Boat(s);
+                int attempts = 200;
+                bool placed = false;
+                while (attempts-- > 0) {
+                        int row = std::rand() % b->getRows();
+                        int col = std::rand() % b->getCols();
+                        bool hor = (std::rand() % 2 == 0);
+                        if (b->placeBoat(boat, row, col, hor)) { placed = true; break; }
+                }
+                if (!placed) { delete boat; /* très improbable */ }
+                }
+            }
+            }
+
+            // Si multi: attendre les 2
+            const QString p1name = QString::fromStdString(p1->getName());
+            const QString p2name = QString::fromStdString(p2->getName());
+
+            const bool p1ok = pendingPlacements[roomId].contains(p1name);
+            const bool p2ok = isSolo ? true : pendingPlacements[roomId].contains(p2name);
+
+            if (p1ok && p2ok) {
+            roomInPlacement[roomId] = false;
+
+            // Annonce début (une seule fois)
+            Room* r = findRoomById(roomId);
+            if (r && !r->startAnnounced) {
+                broadcastSystemMessage(roomId, QString("🎮 Début de partie : %1 vs %2")
+                                                   .arg(p1name, p2name));
+                r->startAnnounced = true;
+            }
+
+            // Envoyer les boards puis statut initial
+            sendBoardsUpdateToClients(roomId);   // réutilise ton format BOARD_CREATE;… :contentReference[oaicite:7]{index=7}
+            sendStatusInfoToClients(roomId);     // enverra le current player, etc. :contentReference[oaicite:8]{index=8}
+            }
+        }
+
+
+
+
 
 }
 
@@ -802,7 +912,6 @@ QList<QTcpSocket*> Server::clientsInRoom(const QString &_roomId) {
 
 void Server::createSoloGame(QTcpSocket* humanSocket, const QString& playerName)
 {
-    // créer une "room" dédiée
     QString roomId = QString("solo_%1").arg(clientIdMap[humanSocket]);
     createRoom(roomId, "Solo vs AI", "publique", "");
     Room* room = findRoomById(roomId);
@@ -810,44 +919,37 @@ void Server::createSoloGame(QTcpSocket* humanSocket, const QString& playerName)
     clientRoomMap[humanSocket] = roomId;
     room->clientCount = 1;
 
-    // Créer joueurs
     Player* human = new Player{ playerName.toStdString() };
     Player* ai    = new Player{ std::string("AI") };
 
-    // Game
     Game* game = new Game(human, ai);
     games.append(game);
     roomGameMap[roomId] = game;
-    game->initializeGame();
 
-    // IA (dimension 10x10 aujourd'hui)
-    roomAiMap[roomId] = new AiAgent(human->getBoard()->getRows(), human->getBoard()->getCols());
-
-    // prévenir le client que la room est prête
-    humanSocket->write(QString("ROOM_READY;%1\n").arg(roomId).toUtf8());
-    humanSocket->flush();
-    // Init états joueurs
+    // Init états
     roomState[roomId][QString::fromStdString(human->getName())] = PlayerState{};
     roomState[roomId][QString::fromStdString(ai->getName())]    = PlayerState{};
 
+    // IA helper
+    roomAiMap[roomId] = new AiAgent(human->getBoard()->getRows(), human->getBoard()->getCols());
 
-    // envoyer les boards + status
-    sendBoardsUpdateToClients(roomId);
-    Room* r = findRoomById(roomId);
-    Game* g  = roomGameMap.value(roomId, nullptr);
-    if (r && g && !r->startAnnounced) {
-        const QString p1 = QString::fromStdString(g->getPlayer1()->getName());
-        const QString p2 = QString::fromStdString(g->getPlayer2()->getName());
-        broadcastSystemMessage(roomId, QString("🎮 Début de partie : %1 vs %2").arg(p1, "IA"));
-        r->startAnnounced = true;
-    }
-    sendStatusInfoToClients(roomId);
+    // NEW: placement d'abord
+    roomInPlacement[roomId] = true;
+    const int W = human->getBoard()->getCols();
+    const int H = human->getBoard()->getRows();
 
-    // si c'est à l'IA de jouer en premier, jouer tout de suite
-    if (QString::fromStdString(game->getCurrentPlayer()->getName()) == "AI") {
-        QTimer::singleShot(300, [this, roomId]() { playAiTurn(roomId); });
-    }
+    QString msg = QString("PLACEMENT_START;%1;%2;%3;%4;%5;%6\n")
+                      .arg(roomId)
+                      .arg(QString::fromStdString(human->getName()))
+                      .arg("AI")
+                      .arg(W)
+                      .arg(H)
+                      .arg("solo");
+    humanSocket->write(msg.toUtf8());
+    humanSocket->flush();
+
 }
+
 
 void Server::playAiTurn(const QString& roomId)
 {
@@ -1037,9 +1139,11 @@ bool Server::checkSpectatorAccess(const QString &id_room, const QString &passwor
     if (!room) return false;
     if (room->type == "privée" && room->password != password) return false;
 
-               // Option : n’autoriser que si une partie est en cours (2 joueurs déjà prêts)
                const bool gameRunning = roomGameMap.contains(id_room);
     if (!gameRunning) return false;
+
+    // NEW: interdire spectateurs durant phase de placement
+    if (roomInPlacement.value(id_room, false)) return false;
 
     room->spectatorCount++;
     return true;

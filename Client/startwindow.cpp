@@ -11,6 +11,7 @@
 #include <QLabel>
 #include <QInputDialog>
 #include "spectatorwindow.h"
+#include "placementwindow.h"
 
 
 StartWindow::StartWindow(QWidget *parent) :
@@ -22,8 +23,8 @@ StartWindow::StartWindow(QWidget *parent) :
     ui->tableRooms->setColumnCount(4);
     ui->tableRooms->setHorizontalHeaderLabels(QStringList() << "Id" << "Nom" << "Privé ou publique" << "Nombre de clients");
 
-    // Créer un nouveau QMessageBox et le stocker dans waitingMessageBox
-    waitingMessageBox = new QMessageBox(this);
+        // Créer un nouveau QMessageBox et le stocker dans waitingMessageBox
+        waitingMessageBox = new QMessageBox(this);
     waitingMessageBox->setWindowTitle("WAITING...");
     waitingMessageBox->setText("Waiting for 2 player...");
     waitingMessageBox->setStandardButtons(QMessageBox::Cancel);
@@ -64,7 +65,6 @@ StartWindow::StartWindow(QWidget *parent) :
     socket->write("GET_ROOMS");
     socket->flush();
 }
-
 StartWindow::~StartWindow()
 {
     delete ui;
@@ -77,13 +77,13 @@ void StartWindow::on_btnCreate_clicked()
     QDialog dialog(this);
     dialog.setWindowTitle("Créer une salle");
 
-    // Créer les widgets pour le dialogue
-    QLineEdit *lineEditRoomName = new QLineEdit(&dialog);
+        // Créer les widgets pour le dialogue
+        QLineEdit *lineEditRoomName = new QLineEdit(&dialog);
     QCheckBox *checkBoxIsPublic = new QCheckBox("Room Privé", &dialog);
-    QPushButton *btnSubmit = new QPushButton("Créer", &dialog);
+        QPushButton *btnSubmit = new QPushButton("Créer", &dialog);
 
-    // Créer le champ mot de passe, il est initialement caché
-    QLineEdit *lineEditPassword = new QLineEdit(&dialog);
+        // Créer le champ mot de passe, il est initialement caché
+        QLineEdit *lineEditPassword = new QLineEdit(&dialog);
     lineEditPassword->setPlaceholderText("Mot de passe");
     lineEditPassword->setEchoMode(QLineEdit::Password);  // Cacher les caractères
     lineEditPassword->setEnabled(false);  // Désactiver par défaut
@@ -118,13 +118,13 @@ void StartWindow::on_btnCreate_clicked()
         // Vérifier que le nom de la salle n'est pas vide
         if (roomName.isEmpty()) {
             qDebug() << "Erreur: Le nom de la salle ne peut pas être vide!";
-            return;
+                return;
         }
 
         // Logique pour envoyer les informations au serveur
         QString data = "CREATE_ROOM;" + roomName + ";" + (isPrivate ? "privée" : "publique");
 
-        if (!password.isEmpty()) {
+                       if (!password.isEmpty()) {
             data += ";" + password;  // Ajouter le mot de passe si la salle est privée
         }
 
@@ -224,6 +224,38 @@ void StartWindow::onReadyRead()
             w->show();
             this->hide();
         }
+        // StartWindow::onReadyRead()
+        else if (message.startsWith("PLACEMENT_START;")) {
+            // Format: PLACEMENT_START;roomId;p1;p2;W;H;mode
+            // mode: "solo" ou "multi"
+            QStringList t = message.split(';', Qt::SkipEmptyParts);
+            if (t.size() < 7) return;
+            const QString rid   = t[1];
+            const QString p1    = t[2];
+            const QString p2    = t[3];
+            const int W         = t[4].toInt();
+            const int H         = t[5].toInt();
+            const bool isSolo   = (t[6].trimmed() == "solo");
+
+            if (waitingMessageBox) waitingMessageBox->close();
+            // Déconnecter la lecture ici
+            disconnect(socket, &QTcpSocket::readyRead, this, &StartWindow::onReadyRead);
+
+            // Ouvrir PlacementWindow
+            auto* w = new PlacementWindow(rid, playerName, socket, H, W, p1, p2, isSolo, this);
+            connect(w, &PlacementWindow::placementAborted, this, [this](){
+                this->show();
+                connect(socket, &QTcpSocket::readyRead, this, &StartWindow::onReadyRead);
+            });
+            w->show();
+            this->hide();
+        }
+
+        else if (message.startsWith("ERR_SPECTATE_UNAVAILABLE_DURING_PLACEMENT")) {
+            QMessageBox::information(this, "Spectate indisponible",
+                                     "La partie est en phase de placement. Réessaie après le début de la bataille.");
+        }
+
 
         else {
             qDebug() << "Message non reconnu :" << message;

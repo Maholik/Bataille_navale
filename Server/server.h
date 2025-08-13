@@ -59,6 +59,10 @@ private:
         int missiles = 0;
     };
 
+    struct SubmittedBoat {
+        int size; int row; int col; bool horizontal;
+    };
+
     QTcpServer *server;
     QList<QTcpSocket*> clients;
     QMap<QTcpSocket*, QString> clientRoomMap;
@@ -100,7 +104,11 @@ private:
 
     bool checkSpectatorAccess(const QString& id_room, const QString& password);
 
+    // Salle en phase de placement ?
+    QMap<QString, bool> roomInPlacement;
 
+    // roomId -> (playerName -> liste de bateaux soumis)
+    QMap<QString, QMap<QString, QVector<SubmittedBoat>>> pendingPlacements;
 
 
 
