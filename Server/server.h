@@ -6,11 +6,7 @@
 #include <QTcpSocket>
 #include <QList>
 #include <QMap>
-#include <QVector>
-#include <QSet>
-
 #include "game.h"
-
 
 class Server : public QObject
 {
@@ -34,8 +30,6 @@ public:
     void onRoomDisconnected(const QString&);
 
 
-
-
 private slots:
     void onNewConnection();
     void onReadyRead();
@@ -55,11 +49,6 @@ private:
         // NEW : pour éviter doublons d'annonces
         bool startAnnounced = false;
         bool endAnnounced   = false;
-
-        bool placementPhase = false;
-        QMap<QString, QVector<int>> boatsRemaining; // par joueur: tailles à placer (ex: 5,4,3,3,2)
-        QSet<QString> placementReady;               // joueurs qui ont terminé
-
     };
 
     // --- ÉTAT PAR JOUEUR (score, drops, inventaire) ---
@@ -110,12 +99,6 @@ private:
     void consumeScannerOrPay(const QString& roomId, const QString& attacker);
 
     bool checkSpectatorAccess(const QString& id_room, const QString& password);
-
-    //Helpers placement
-    void startPlacementPhase(const QString& roomId);
-    bool placeBoatForPlayer(Game* gm, const QString& player, int size, int row, int col, bool horizontal);
-    void finishPlacementIfReady(const QString& roomId);
-
 
 
 
