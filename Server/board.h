@@ -1,35 +1,66 @@
 #ifndef BOARD_H
 #define BOARD_H
 
+/**
+ * \file Board.h
+ * \brief Plateau de jeu : grille de \ref Case et liste de \ref Boat.
+ * \ingroup server-model
+ */
+
 #include <vector>
 #include <stdexcept>
 #include "Case.h"
 #include "Boat.h"
 
+/**
+ * \class Board
+ * \brief Gère la grille, le placement des bateaux et les tirs.
+ */
 class Board {
 public:
-    Board(int rows, int cols);                  // Constructeur
-    ~Board();                                   // Destructeur pour libérer la mémoire
+    /// Construit un plateau rows x cols.
+    Board(int rows, int cols);
 
-    // Accesseurs
-    int getRows() const;                        // Retourne le nombre de lignes
-    int getCols() const;                        // Retourne le nombre de colonnes
-    Case* getCase(int row, int col) const;      // Retourne une case spécifique
-    std::vector<Boat*> getAllBoats();
+    /// Libère les \ref Case et \ref Boat possédés.
+    ~Board();
 
-    // Méthodes principales
-    bool attack(int row, int col);              // Tire sur une case, retourne true si touché
-    bool allBoatsSunk() const;                  // Vérifie si tous les bateaux sont coulés
-    void display() const; // Nouvelle méthode d'affichage
-    bool placeBoat(Boat* boat, int startRow, int startCol, bool horizontal); // Place un bateau sur le plateau
+    /// \name Accesseurs
+    ///@{
+    int getRows() const;                 ///< Nombre de lignes.
+    int getCols() const;                 ///< Nombre de colonnes.
+    Case* getCase(int row, int col) const; ///< Accès à une case (exception si hors bornes).
+    std::vector<Boat*> getAllBoats();    ///< Copie de la liste des bateaux.
+    ///@}
+
+    /// Tire sur une case ; \return true si touché.
+    bool attack(int row, int col);
+
+    /// \return true si tous les bateaux sont coulés.
+    bool allBoatsSunk() const;
+
+    /// Affiche la grille en console (debug).
+    void display() const;
+
+    /**
+     * \brief Place un bateau si possible.
+     * \param boat Pointeur du bateau (possédé après placement).
+     * \param startRow Ligne de départ.
+     * \param startCol Colonne de départ.
+     * \param horizontal Orientation.
+     * \return true si placement réussi.
+     */
+    bool placeBoat(Boat* boat, int startRow, int startCol, bool horizontal);
 
 private:
-    int m_rows;                                 // Nombre de lignes
-    int m_cols;                                 // Nombre de colonnes
-    std::vector<std::vector<Case*>> m_grid;    // Grille de cases
-    std::vector<Boat*> m_boats;                 // Liste des bateaux placés
+    int m_rows;
+    int m_cols;
+    std::vector<std::vector<Case*>> m_grid;
+    std::vector<Boat*> m_boats;
 
-    bool isValidPosition(int row, int col) const; // Vérifie si une position est valide sur la grille
+    /// Vérifie la validité des coordonnées dans la grille.
+    bool isValidPosition(int row, int col) const;
+
+    /// (Interne) Affichage détaillé.
     void displayBoard(const Board& board);
 };
 

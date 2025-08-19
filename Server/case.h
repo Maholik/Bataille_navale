@@ -1,28 +1,42 @@
 #ifndef CASE_H
 #define CASE_H
 
+/**
+ * \file case.h
+ * \brief Représente une case d'un plateau (statut + coordonnées).
+ * \ingroup server-model
+ */
 class Case {
 public:
-    enum Status {
-        Empty,    // Case vide
-        Occupied, // Contient une partie d'un bateau
-        Hit,      // Touché par un tir
-        Miss      // Tir manqué
-    };
+    /// Statut logique d'une case.
+    enum Status { Empty, Occupied, Hit, Miss };
 
-    explicit Case(int row = -1, int col = -1); // ← explicit
-    Status getStatus() const;         // Retourne le statut de la case
-    void setStatus(Status status);    // Modifie le statut de la case
+    /**
+     * \brief Construit une case.
+     * \param row Ligne initiale (-1 si non positionnée).
+     * \param col Colonne initiale (-1 si non positionnée).
+     */
+    explicit Case(int row = -1, int col = -1);
 
-    int getRow() const;               // Retourne la ligne de la case
-    int getCol() const;               // Retourne la colonne de la case
-    void setPosition(int row, int col); // Définit la position de la case
+    /// Retourne le statut courant.
+    Status getStatus() const;
 
+    /// Change le statut.
+    void setStatus(Status status);
+
+    /// Coordonnée ligne.
+    int getRow() const;
+
+    /// Coordonnée colonne.
+    int getCol() const;
+
+    /// Modifie la position (ligne/colonne).
+    void setPosition(int row, int col);
 
 private:
-    Status m_status; // Statut de la case
-    int m_row;       // Ligne de la case
-    int m_col;       // Colonne de la case
+    Status m_status; ///< Statut de la case.
+    int m_row;       ///< Ligne.
+    int m_col;       ///< Colonne.
 };
 
 #endif // CASE_H
